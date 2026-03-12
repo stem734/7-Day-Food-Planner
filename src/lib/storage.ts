@@ -13,11 +13,16 @@ export function loadInitialState(): AppState {
     return {
       inventory: parsed.inventory?.length ? parsed.inventory : defaultState.inventory,
       family: parsed.family?.length ? parsed.family : defaultState.family,
+      userRecipes: parsed.userRecipes ?? defaultState.userRecipes,
       householdNeeds: parsed.householdNeeds?.length
         ? parsed.householdNeeds
         : defaultState.householdNeeds,
       cookedMeals: parsed.cookedMeals ?? defaultState.cookedMeals,
+      mealCookingFor: parsed.mealCookingFor ?? defaultState.mealCookingFor,
+      mealRecipeOverrides: parsed.mealRecipeOverrides ?? defaultState.mealRecipeOverrides,
       shoppingChecked: parsed.shoppingChecked ?? defaultState.shoppingChecked,
+      shoppingExtras: parsed.shoppingExtras ?? defaultState.shoppingExtras,
+      purchaseHistory: parsed.purchaseHistory ?? defaultState.purchaseHistory,
     }
   } catch {
     return defaultState

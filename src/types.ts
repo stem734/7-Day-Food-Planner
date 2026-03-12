@@ -18,6 +18,9 @@ export type InventoryItem = {
   brand?: string
   categories: string[]
   quantity: number
+  remainingPercent?: number
+  rebuyEveryDays?: number
+  lastPurchasedOn?: string
   unit: string
   zone: StorageZone
   expiresOn: string
@@ -45,12 +48,18 @@ export type FamilyMember = {
   avoidIngredients: string
 }
 
+export type RecipeIngredient = {
+  name: string
+  amount: number
+  unit: string
+}
+
 export type Recipe = {
   id: string
   title: string
   description: string
   servings: number
-  ingredients: string[]
+  ingredients: RecipeIngredient[]
   steps: string[]
   dietaryTags: DietaryTag[]
   allergens: string[]
@@ -72,6 +81,7 @@ export type PlannedMeal = {
   recipe: Recipe
   matchedIngredients: string[]
   missingIngredients: string[]
+  wasteReason: string
   score: number
 }
 
@@ -97,12 +107,34 @@ export type ShoppingListItem = {
   priority: 'High' | 'Medium'
 }
 
+export type MealCookingFor = 'all' | number
+
 export type AppState = {
   inventory: InventoryItem[]
   family: FamilyMember[]
+  userRecipes: Recipe[]
   householdNeeds: DietaryTag[]
   cookedMeals: Record<string, boolean>
+  mealCookingFor: Record<string, MealCookingFor>
+  mealRecipeOverrides: Record<string, string>
   shoppingChecked: Record<string, boolean>
+  shoppingExtras: ShoppingListItem[]
+  purchaseHistory: Array<{
+    name: string
+    date: string
+  }>
+}
+
+export type CachedProduct = {
+  barcode: string
+  name: string
+  brand?: string
+  categories: string[]
+  unit: string
+  zone: StorageZone
+  dietaryTags: DietaryTag[]
+  allergens: string[]
+  health: InventoryItem['health']
 }
 
 export type SupabasePantryStateRow = {
@@ -110,8 +142,22 @@ export type SupabasePantryStateRow = {
   user_id: string
   inventory: InventoryItem[]
   family: FamilyMember[]
+  user_recipes: Recipe[]
   household_needs: DietaryTag[]
   cooked_meals: Record<string, boolean>
+  meal_cooking_for: Record<string, MealCookingFor>
+  meal_recipe_overrides: Record<string, string>
   shopping_checked: Record<string, boolean>
+  shopping_extras: ShoppingListItem[]
+  purchase_history: Array<{
+    name: string
+    date: string
+  }>
+  updated_at?: string
+}
+
+export type SupabaseProductCacheRow = {
+  barcode: string
+  product: CachedProduct
   updated_at?: string
 }

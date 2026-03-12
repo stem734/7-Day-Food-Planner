@@ -302,9 +302,14 @@ export const sampleDemoFamily: FamilyMember[] = [
 export const defaultState: AppState = {
   inventory: starterInventory,
   family: starterFamily,
+  userRecipes: [],
   householdNeeds: ['Nut-Free'],
   cookedMeals: {},
+  mealCookingFor: {},
+  mealRecipeOverrides: {},
   shoppingChecked: {},
+  shoppingExtras: [],
+  purchaseHistory: [],
 }
 
 export const recipeLibrary: Recipe[] = [
@@ -313,7 +318,13 @@ export const recipeLibrary: Recipe[] = [
     title: 'Smoky Chickpea Traybake',
     description: 'Roasted chickpeas and vegetables with paprika, lemon, and herbs.',
     servings: 4,
-    ingredients: ['chickpeas', 'mixed vegetables', 'olive oil', 'paprika', 'lemon'],
+    ingredients: [
+      { name: 'chickpeas', amount: 2, unit: 'tins' },
+      { name: 'mixed vegetables', amount: 600, unit: 'g' },
+      { name: 'olive oil', amount: 2, unit: 'tbsp' },
+      { name: 'paprika', amount: 2, unit: 'tsp' },
+      { name: 'lemon', amount: 1, unit: '' },
+    ],
     steps: [
       'Heat the oven to 220C and drain the chickpeas well.',
       'Toss the chickpeas and mixed vegetables with olive oil, paprika, and a pinch of salt.',
@@ -332,7 +343,13 @@ export const recipeLibrary: Recipe[] = [
     title: 'Herby Yogurt Chicken Bowls',
     description: 'Chicken bowls with yogurt dressing, grains, and crunchy veg.',
     servings: 4,
-    ingredients: ['chicken breast', 'greek yogurt', 'rice', 'cucumber', 'spinach'],
+    ingredients: [
+      { name: 'chicken breast', amount: 500, unit: 'g' },
+      { name: 'greek yogurt', amount: 250, unit: 'g' },
+      { name: 'rice', amount: 300, unit: 'g' },
+      { name: 'cucumber', amount: 1, unit: '' },
+      { name: 'spinach', amount: 120, unit: 'g' },
+    ],
     steps: [
       'Cook the rice according to the packet instructions.',
       'Season and pan-cook the chicken until browned and cooked through, then slice.',
@@ -351,7 +368,13 @@ export const recipeLibrary: Recipe[] = [
     title: 'Freezer Veg Stir-Fry',
     description: 'A quick stir-fry built around freezer vegetables and pantry sauces.',
     servings: 4,
-    ingredients: ['mixed vegetables', 'soy sauce', 'rice noodles', 'garlic', 'tofu'],
+    ingredients: [
+      { name: 'mixed vegetables', amount: 500, unit: 'g' },
+      { name: 'soy sauce', amount: 3, unit: 'tbsp' },
+      { name: 'rice noodles', amount: 250, unit: 'g' },
+      { name: 'garlic', amount: 2, unit: 'cloves' },
+      { name: 'tofu', amount: 400, unit: 'g' },
+    ],
     steps: [
       'Soak or cook the rice noodles following the packet instructions.',
       'Fry the tofu in a hot pan until golden, then add garlic and the frozen vegetables.',
@@ -370,7 +393,13 @@ export const recipeLibrary: Recipe[] = [
     title: 'Lentil Cottage Pie',
     description: 'Comforting lentil pie with mashed potato topping and hidden vegetables.',
     servings: 4,
-    ingredients: ['lentils', 'potatoes', 'carrots', 'peas', 'vegetable stock'],
+    ingredients: [
+      { name: 'lentils', amount: 250, unit: 'g' },
+      { name: 'potatoes', amount: 8, unit: 'potatoes' },
+      { name: 'carrots', amount: 3, unit: 'carrots' },
+      { name: 'peas', amount: 200, unit: 'g' },
+      { name: 'vegetable stock', amount: 750, unit: 'ml' },
+    ],
     steps: [
       'Boil the potatoes until tender, then mash until smooth.',
       'Simmer lentils with chopped carrots, peas, and vegetable stock until thickened.',
@@ -389,7 +418,13 @@ export const recipeLibrary: Recipe[] = [
     title: 'Salmon, Greens and New Potatoes',
     description: 'A lighter dinner with omega-3 rich salmon and green vegetables.',
     servings: 4,
-    ingredients: ['salmon', 'potatoes', 'broccoli', 'peas', 'lemon'],
+    ingredients: [
+      { name: 'salmon', amount: 4, unit: 'fillets' },
+      { name: 'potatoes', amount: 8, unit: 'potatoes' },
+      { name: 'broccoli', amount: 1, unit: 'head' },
+      { name: 'peas', amount: 200, unit: 'g' },
+      { name: 'lemon', amount: 1, unit: '' },
+    ],
     steps: [
       'Boil the potatoes until tender and steam the broccoli and peas.',
       'Roast or pan-fry the salmon until just cooked through.',
@@ -408,7 +443,13 @@ export const recipeLibrary: Recipe[] = [
     title: 'Black Bean Chili',
     description: 'Hearty bean chili with tomatoes, peppers, and warming spices.',
     servings: 4,
-    ingredients: ['black beans', 'tomatoes', 'peppers', 'onion', 'cumin'],
+    ingredients: [
+      { name: 'black beans', amount: 2, unit: 'tins' },
+      { name: 'tomatoes', amount: 2, unit: 'tins' },
+      { name: 'peppers', amount: 2, unit: 'peppers' },
+      { name: 'onion', amount: 1, unit: 'onion' },
+      { name: 'cumin', amount: 2, unit: 'tsp' },
+    ],
     steps: [
       'Cook the onion and peppers in a large pan until softened.',
       'Add cumin and any extra spices, then stir for 30 seconds.',
@@ -427,7 +468,13 @@ export const recipeLibrary: Recipe[] = [
     title: 'Turkey Meatball Orzo Bake',
     description: 'Protein-forward baked orzo with meatballs, tomato, and spinach.',
     servings: 4,
-    ingredients: ['turkey mince', 'orzo', 'tomatoes', 'spinach', 'mozzarella'],
+    ingredients: [
+      { name: 'turkey mince', amount: 500, unit: 'g' },
+      { name: 'orzo', amount: 250, unit: 'g' },
+      { name: 'tomatoes', amount: 1, unit: 'tin' },
+      { name: 'spinach', amount: 120, unit: 'g' },
+      { name: 'mozzarella', amount: 125, unit: 'g' },
+    ],
     steps: [
       'Shape the turkey mince into small meatballs and brown them in a pan.',
       'Stir orzo, tomatoes, and a splash of stock into an oven dish.',
@@ -446,7 +493,13 @@ export const recipeLibrary: Recipe[] = [
     title: 'Coconut Red Lentil Curry',
     description: 'Creamy lentil curry with spinach and fragrant spices.',
     servings: 4,
-    ingredients: ['red lentils', 'coconut milk', 'spinach', 'onion', 'curry paste'],
+    ingredients: [
+      { name: 'red lentils', amount: 250, unit: 'g' },
+      { name: 'coconut milk', amount: 1, unit: 'tin' },
+      { name: 'spinach', amount: 120, unit: 'g' },
+      { name: 'onion', amount: 1, unit: 'onion' },
+      { name: 'curry paste', amount: 2, unit: 'tbsp' },
+    ],
     steps: [
       'Cook the onion until soft, then stir in the curry paste.',
       'Add red lentils and coconut milk with enough water or stock to simmer.',
@@ -465,7 +518,13 @@ export const recipeLibrary: Recipe[] = [
     title: 'Sheet-Pan Sausage and Vegetables',
     description: 'Roasted sausages with colourful vegetables for a simple dinner.',
     servings: 4,
-    ingredients: ['sausages', 'potatoes', 'peppers', 'broccoli', 'red onion'],
+    ingredients: [
+      { name: 'sausages', amount: 8, unit: 'sausages' },
+      { name: 'potatoes', amount: 8, unit: 'potatoes' },
+      { name: 'peppers', amount: 2, unit: 'peppers' },
+      { name: 'broccoli', amount: 1, unit: 'head' },
+      { name: 'red onion', amount: 1, unit: 'onion' },
+    ],
     steps: [
       'Heat the oven to 220C and chop the vegetables into bite-sized pieces.',
       'Toss the vegetables and sausages with a little oil on a large tray.',
@@ -484,7 +543,13 @@ export const recipeLibrary: Recipe[] = [
     title: 'Yogurt Berry Breakfast Pots',
     description: 'Make-ahead breakfast pots with yogurt, oats, berries, and seeds.',
     servings: 4,
-    ingredients: ['greek yogurt', 'berries', 'oats', 'chia seeds', 'honey'],
+    ingredients: [
+      { name: 'greek yogurt', amount: 400, unit: 'g' },
+      { name: 'berries', amount: 300, unit: 'g' },
+      { name: 'oats', amount: 160, unit: 'g' },
+      { name: 'chia seeds', amount: 4, unit: 'tbsp' },
+      { name: 'honey', amount: 4, unit: 'tsp' },
+    ],
     steps: [
       'Stir the oats and chia seeds into the yogurt.',
       'Layer the yogurt mixture into jars or bowls with berries.',

@@ -8,12 +8,14 @@ import {
   sampleDemoInventory,
   storageZones,
 } from './data'
-import { buildMealPlan, buildShoppingList, titleCase } from './lib/planner'
+import { buildMealPlan, formatRecipeIngredient, titleCase } from './lib/planner'
 import { loadInitialState, saveLocalState } from './lib/storage'
 import {
   getCurrentUserId,
   isSupabaseEnabled,
+  loadCachedProduct,
   loadRemoteState,
+  saveCachedProduct,
   saveRemoteState,
   signInWithPassword,
   signOut,
@@ -21,12 +23,15 @@ import {
   supabase,
 } from './lib/supabase'
 import type {
-  AISuggestedMeal,
   AppState,
+  CachedProduct,
   DietaryTag,
   DietProfile,
   InventoryItem,
+  MealCookingFor,
   PlannedMeal,
+  Recipe,
+  ShoppingListItem,
   StorageZone,
 } from './types'
 
@@ -51,6 +56,38 @@ declare global {
 }
 
 const dietProfiles: DietProfile[] = ['Omnivore', 'Vegetarian', 'Vegan']
+
+const emptyRecipeForm = {
+  title: '',
+  description: '',
+  servings: 4,
+  cookTime: 30,
+  ingredients: [{ name: '', amount: '', unit: '' }],
+  steps: '',
+  dietaryTags: [] as DietaryTag[],
+  allergens: '',
+  zoneFocus: [] as StorageZone[],
+  healthHighlights: '',
+}
+
+function recipeToForm(recipe: Recipe) {
+  return {
+    title: recipe.title,
+    description: recipe.description,
+    servings: recipe.servings,
+    cookTime: recipe.cookTime,
+    ingredients: recipe.ingredients.map((ingredient) => ({
+      name: ingredient.name,
+      amount: String(ingredient.amount),
+      unit: ingredient.unit,
+    })),
+    steps: recipe.steps.join('\n'),
+    dietaryTags: recipe.dietaryTags,
+    allergens: recipe.allergens.join(', '),
+    zoneFocus: recipe.zoneFocus,
+    healthHighlights: recipe.healthHighlights.join(', '),
+  }
+}
 
 function normalize(value: string) {
   return value.trim().toLowerCase()
@@ -141,6 +178,7 @@ function buildScannedItem(barcode: string, product: Record<string, unknown>): In
     brand: String(product.brands || ''),
     categories,
     quantity: 1,
+    remainingPercent: undefined,
     unit: 'pack',
     zone: inferStorageZone(
       String(product.product_name || product.product_name_en || 'Scanned product'),
@@ -163,16 +201,62 @@ function buildScannedItem(barcode: string, product: Record<string, unknown>): In
   }
 }
 
+function buildDraftFromCachedProduct(product: CachedProduct): InventoryItem {
+  return {
+    id: `barcode-${Date.now()}`,
+    name: product.name,
+    brand: product.brand ?? '',
+    categories: product.categories,
+    quantity: 1,
+    remainingPercent: undefined,
+    unit: product.unit,
+    zone: product.zone,
+    expiresOn: '',
+    barcode: product.barcode,
+    source: 'barcode',
+    dietaryTags: product.dietaryTags,
+    allergens: product.allergens,
+    health: product.health,
+  }
+}
+
+function toCachedProduct(item: InventoryItem): CachedProduct {
+  return {
+    barcode: item.barcode ?? '',
+    name: item.name,
+    brand: item.brand ?? '',
+    categories: item.categories,
+    unit: item.unit,
+    zone: item.zone,
+    dietaryTags: item.dietaryTags,
+    allergens: item.allergens,
+    health: item.health,
+  }
+}
+
 function App() {
   const initialState = useMemo(() => loadInitialState(), [])
   const [inventory, setInventory] = useState<AppState['inventory']>(initialState.inventory)
   const [family, setFamily] = useState<AppState['family']>(initialState.family)
+  const [userRecipes, setUserRecipes] = useState<AppState['userRecipes']>(initialState.userRecipes)
   const [householdNeeds, setHouseholdNeeds] = useState<AppState['householdNeeds']>(
     initialState.householdNeeds,
   )
   const [cookedMeals, setCookedMeals] = useState<AppState['cookedMeals']>(initialState.cookedMeals)
+  const [mealCookingFor, setMealCookingFor] = useState<AppState['mealCookingFor']>(
+    initialState.mealCookingFor,
+  )
+  const [mealRecipeOverrides, setMealRecipeOverrides] = useState<AppState['mealRecipeOverrides']>(
+    initialState.mealRecipeOverrides,
+  )
   const [shoppingChecked, setShoppingChecked] = useState<AppState['shoppingChecked']>(
     initialState.shoppingChecked,
+  )
+  const [shoppingExtras, setShoppingExtras] = useState<AppState['shoppingExtras']>(
+    initialState.shoppingExtras,
+  )
+  const [purchaseHistory, setPurchaseHistory] = useState<AppState['purchaseHistory']>(
+    initialState.purchaseHistory,
   )
   const [manualItem, setManualItem] = useState(emptyProductForm)
   const [memberForm, setMemberForm] = useState({
@@ -203,15 +287,14 @@ function App() {
   const [isFamilyModalOpen, setIsFamilyModalOpen] = useState(false)
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false)
   const [isShoppingListModalOpen, setIsShoppingListModalOpen] = useState(false)
+  const [shoppingFeedback, setShoppingFeedback] = useState('')
   const [selectedMeal, setSelectedMeal] = useState<PlannedMeal | null>(null)
-  const [selectedAiMeal, setSelectedAiMeal] = useState<AISuggestedMeal | null>(null)
+  const [isRecipeModalOpen, setIsRecipeModalOpen] = useState(false)
+  const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null)
+  const [recipeSearch, setRecipeSearch] = useState('')
+  const [recipeForm, setRecipeForm] = useState(emptyRecipeForm)
   const [openMealDay, setOpenMealDay] = useState<string | null>(null)
   const [mealRegenerations, setMealRegenerations] = useState<Record<string, number>>({})
-  const [aiMeals, setAiMeals] = useState<AISuggestedMeal[]>([])
-  const [aiStatus, setAiStatus] = useState<'idle' | 'loading' | 'error' | 'success'>('idle')
-  const [aiMessage, setAiMessage] = useState(
-    'Generate OpenAI meal ideas for more flexible recipe suggestions.',
-  )
   const [inventorySort, setInventorySort] = useState<{
     key:
       | 'name'
@@ -233,14 +316,109 @@ function App() {
   const scannerIntervalRef = useRef<number | null>(null)
 
   const appState = useMemo(
-    () => ({ inventory, family, householdNeeds, cookedMeals, shoppingChecked }),
-    [cookedMeals, family, householdNeeds, inventory, shoppingChecked],
+    () => ({
+      inventory,
+      family,
+      userRecipes,
+      householdNeeds,
+      cookedMeals,
+      mealCookingFor,
+      mealRecipeOverrides,
+      shoppingChecked,
+      shoppingExtras,
+      purchaseHistory,
+    }),
+    [
+      cookedMeals,
+      family,
+      userRecipes,
+      householdNeeds,
+      inventory,
+      mealCookingFor,
+      mealRecipeOverrides,
+      purchaseHistory,
+      shoppingChecked,
+      shoppingExtras,
+    ],
   )
   const mealPlan = useMemo(
-    () => buildMealPlan(inventory, family, householdNeeds, mealRegenerations),
-    [family, householdNeeds, inventory, mealRegenerations],
+    () =>
+      buildMealPlan(
+        inventory,
+        family,
+        householdNeeds,
+        userRecipes,
+        mealRecipeOverrides,
+        mealRegenerations,
+      ),
+    [family, householdNeeds, inventory, mealRecipeOverrides, mealRegenerations, userRecipes],
   )
-  const shoppingList = useMemo(() => buildShoppingList(mealPlan), [mealPlan])
+  const filteredMealPlan = useMemo(() => {
+    if (!recipeSearch.trim()) {
+      return mealPlan
+    }
+
+    const query = normalize(recipeSearch)
+
+    return mealPlan.filter((meal) => {
+      const source = [
+        meal.day,
+        meal.recipe.title,
+        meal.recipe.description,
+        ...meal.recipe.ingredients.map((ingredient) => ingredient.name),
+        ...meal.recipe.dietaryTags,
+      ]
+        .join(' ')
+        .toLowerCase()
+
+      return source.includes(query)
+    })
+  }, [mealPlan, recipeSearch])
+  const shoppingList = useMemo(() => {
+    const grouped = new Map<string, ShoppingListItem>()
+    const allItems = [...shoppingExtras]
+
+    allItems.forEach((item) => {
+      const key = normalize(item.name)
+      const existing = grouped.get(key)
+
+      if (existing) {
+        existing.neededFor = Array.from(new Set([...existing.neededFor, ...item.neededFor]))
+        if (item.priority === 'High') {
+          existing.priority = 'High'
+        }
+        return
+      }
+
+      grouped.set(key, {
+        ...item,
+        neededFor: Array.from(new Set(item.neededFor)),
+      })
+    })
+
+    return Array.from(grouped.values()).sort((left, right) => left.name.localeCompare(right.name))
+  }, [shoppingExtras])
+  const shoppingListNames = useMemo(
+    () => new Set(shoppingList.map((item) => normalize(item.name))),
+    [shoppingList],
+  )
+  const duplicateDraftItems = useMemo(() => {
+    if (!productDraft) {
+      return []
+    }
+
+    return inventory.filter((item) => {
+      if (item.zone !== productDraft.zone) {
+        return false
+      }
+
+      if (item.barcode && productDraft.barcode) {
+        return item.barcode === productDraft.barcode
+      }
+
+      return normalize(item.name) === normalize(productDraft.name)
+    })
+  }, [inventory, productDraft])
   const shoppingListByZone = useMemo(() => {
     const zoneOrder: StorageZone[] = ['Cupboard', 'Fridge', 'Freezer']
 
@@ -257,6 +435,129 @@ function App() {
       })
       .filter(({ items }) => items.length > 0)
   }, [shoppingChecked, shoppingList])
+  const suggestedRebuys = useMemo(() => {
+    const today = new Date()
+    const shoppingKeys = new Set(shoppingList.map((item) => normalize(item.name)))
+    const grouped = new Map<
+      string,
+      {
+        name: string
+        zone: StorageZone
+        rebuyEveryDays?: number
+        remainingPercent?: number
+        lastPurchasedOn?: string
+      }
+    >()
+
+    inventory.forEach((item) => {
+      const key = normalize(item.name)
+      const existing = grouped.get(key)
+
+      if (!existing) {
+        grouped.set(key, {
+          name: titleCase(item.name),
+          zone: item.zone,
+          rebuyEveryDays: item.rebuyEveryDays,
+          remainingPercent: item.remainingPercent,
+          lastPurchasedOn: item.lastPurchasedOn,
+        })
+        return
+      }
+
+      existing.rebuyEveryDays = existing.rebuyEveryDays ?? item.rebuyEveryDays
+      existing.remainingPercent =
+        existing.remainingPercent === undefined
+          ? item.remainingPercent
+          : Math.min(existing.remainingPercent, item.remainingPercent ?? 100)
+      if (
+        item.lastPurchasedOn &&
+        (!existing.lastPurchasedOn ||
+          new Date(item.lastPurchasedOn).getTime() > new Date(existing.lastPurchasedOn).getTime())
+      ) {
+        existing.lastPurchasedOn = item.lastPurchasedOn
+      }
+    })
+
+    const medianFromHistory = (name: string) => {
+      const dates = purchaseHistory
+        .filter((entry) => normalize(entry.name) === normalize(name))
+        .map((entry) => new Date(entry.date).getTime())
+        .filter((value) => Number.isFinite(value))
+        .sort((left, right) => left - right)
+
+      if (dates.length < 2) {
+        return undefined
+      }
+
+      const diffs: number[] = []
+      for (let index = 1; index < dates.length; index += 1) {
+        const diffDays = Math.round((dates[index] - dates[index - 1]) / 86400000)
+        if (diffDays > 0) {
+          diffs.push(diffDays)
+        }
+      }
+
+      if (!diffs.length) {
+        return undefined
+      }
+
+      const sortedDiffs = [...diffs].sort((left, right) => left - right)
+      const middle = Math.floor(sortedDiffs.length / 2)
+      return sortedDiffs.length % 2 === 0
+        ? Math.round((sortedDiffs[middle - 1] + sortedDiffs[middle]) / 2)
+        : sortedDiffs[middle]
+    }
+
+    return Array.from(grouped.values())
+      .map((item) => {
+        const rebuyEveryDays = item.rebuyEveryDays ?? medianFromHistory(item.name)
+        if (!rebuyEveryDays || shoppingKeys.has(normalize(item.name))) {
+          return null
+        }
+
+        const lastPurchasedOn = item.lastPurchasedOn
+          ?? purchaseHistory
+            .filter((entry) => normalize(entry.name) === normalize(item.name))
+            .map((entry) => entry.date)
+            .sort()
+            .pop()
+
+        if (!lastPurchasedOn) {
+          return null
+        }
+
+        const daysSince = Math.max(
+          0,
+          Math.round((today.getTime() - new Date(lastPurchasedOn).getTime()) / 86400000),
+        )
+        const daysUntil = rebuyEveryDays - daysSince
+        const lowRemaining = item.remainingPercent !== undefined && item.remainingPercent <= 20
+
+        if (!lowRemaining && daysUntil > 3) {
+          return null
+        }
+
+        return {
+          ...item,
+          rebuyEveryDays,
+          dueLabel: lowRemaining
+            ? `${item.remainingPercent}% left`
+            : daysUntil <= 0
+              ? 'Due now'
+              : `Likely needed in ${daysUntil} day${daysUntil === 1 ? '' : 's'}`,
+        }
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+      .sort((left, right) => left.name.localeCompare(right.name))
+  }, [inventory, purchaseHistory, shoppingList])
+
+  function getShoppingListCoverage(ingredients: string[]) {
+    return ingredients.filter((ingredient) => shoppingListNames.has(normalize(ingredient)))
+  }
+
+  function getOutstandingIngredients(ingredients: string[]) {
+    return ingredients.filter((ingredient) => !shoppingListNames.has(normalize(ingredient)))
+  }
   const inventoryByZone = useMemo(() => {
     const sortedItems = [...inventory].sort((left, right) => {
       const factor = inventorySort.direction === 'asc' ? 1 : -1
@@ -398,9 +699,14 @@ function App() {
         if (remoteState) {
           setInventory(remoteState.inventory)
           setFamily(remoteState.family)
+          setUserRecipes(remoteState.userRecipes)
           setHouseholdNeeds(remoteState.householdNeeds)
           setCookedMeals(remoteState.cookedMeals)
+          setMealCookingFor(remoteState.mealCookingFor)
+          setMealRecipeOverrides(remoteState.mealRecipeOverrides)
           setShoppingChecked(remoteState.shoppingChecked)
+          setShoppingExtras(remoteState.shoppingExtras)
+          setPurchaseHistory(remoteState.purchaseHistory)
           setAuthStatus('Cloud sync is active.')
         } else {
           setAuthStatus('Cloud account ready. The first sync will upload this device state.')
@@ -450,7 +756,35 @@ function App() {
     }
   }, [appState, remoteReady, userId])
 
+  useEffect(() => {
+    if (!shoppingFeedback) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setShoppingFeedback('')
+    }, 2200)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [shoppingFeedback])
+
   async function lookupBarcodeValue(value: string) {
+    if (isSupabaseEnabled) {
+      try {
+        const cached = await loadCachedProduct(value)
+        if (cached) {
+          return {
+            draft: buildDraftFromCachedProduct(cached),
+            source: 'cache' as const,
+          }
+        }
+      } catch {
+        // Fall back to Open Food Facts if shared cache lookup fails.
+      }
+    }
+
     const response = await fetch(
       `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(value)}.json`,
     )
@@ -463,7 +797,18 @@ function App() {
       throw new Error('Product not found')
     }
 
-    return buildScannedItem(value, data.product)
+    const draft = buildScannedItem(value, data.product)
+
+    if (isSupabaseEnabled) {
+      void saveCachedProduct(toCachedProduct(draft)).catch(() => {
+        // Ignore cache-write failures during lookup; the scanned item still works.
+      })
+    }
+
+    return {
+      draft,
+      source: 'openfoodfacts' as const,
+    }
   }
 
   async function lookupBarcode() {
@@ -477,11 +822,13 @@ function App() {
     setLookupMessage('Looking up product details...')
 
     try {
-      const draft = await lookupBarcodeValue(barcode)
+      const { draft, source } = await lookupBarcodeValue(barcode)
       setProductDraft(draft)
       setLookupState('success')
       setLookupMessage(
-        `Found ${draft.name}. Suggested storage: ${draft.zone}. Confirm quantity, then add it.`,
+        source === 'cache'
+          ? `Found ${draft.name} from shared cache. Suggested storage: ${draft.zone}. Confirm quantity, then add it.`
+          : `Found ${draft.name}. Suggested storage: ${draft.zone}. Confirm quantity, then add it.`,
       )
     } catch {
       setLookupState('error')
@@ -537,10 +884,14 @@ function App() {
             setLookupMessage('Looking up detected barcode...')
 
             try {
-              const draft = await lookupBarcodeValue(code)
+              const { draft, source } = await lookupBarcodeValue(code)
               setProductDraft(zone === 'main' ? draft : { ...draft, zone })
               setLookupState('success')
-              setLookupMessage('Barcode detected and product details loaded.')
+              setLookupMessage(
+                source === 'cache'
+                  ? 'Barcode detected and product details loaded from shared cache.'
+                  : 'Barcode detected and product details loaded.',
+              )
             } catch {
               setLookupState('error')
               setLookupMessage('Barcode detected, but the product was not found in Open Food Facts.')
@@ -572,10 +923,58 @@ function App() {
   }
 
   function addInventoryItem(item: InventoryItem) {
-    setInventory((current) => [item, ...current])
+    const purchasedOn = item.lastPurchasedOn || new Date().toISOString().slice(0, 10)
+    setInventory((current) => [{ ...item, lastPurchasedOn: purchasedOn }, ...current])
+    setPurchaseHistory((current) => [...current, { name: item.name, date: purchasedOn }])
+  }
+
+  function removeShoppingItemsForMeal(day: string) {
+    const mealPrefix = `${day}: `
+    let removedLinks = 0
+    const removedNames: string[] = []
+
+    setShoppingExtras((current) =>
+      current
+        .map((item) => {
+          const remainingNeededFor = item.neededFor.filter((entry) => {
+            const matchesMeal = entry.startsWith(mealPrefix)
+            if (matchesMeal) {
+              removedLinks += 1
+            }
+            return !matchesMeal
+          })
+
+          if (!remainingNeededFor.length) {
+            removedNames.push(item.name)
+            return null
+          }
+
+          return {
+            ...item,
+            neededFor: remainingNeededFor,
+          }
+        })
+        .filter((item): item is ShoppingListItem => item !== null),
+    )
+
+    if (removedLinks) {
+      setShoppingChecked((current) => {
+        const next = { ...current }
+        removedNames.forEach((name) => {
+          delete next[name]
+        })
+        return next
+      })
+      setShoppingFeedback(
+        removedLinks === 1
+          ? `Shopping list updated for ${day}: 1 linked item removed.`
+          : `Shopping list updated for ${day}: ${removedLinks} linked items removed.`,
+      )
+    }
   }
 
   function regenerateMeal(day: string) {
+    removeShoppingItemsForMeal(day)
     setMealRegenerations((current) => ({
       ...current,
       [day]: (current[day] ?? 0) + 1,
@@ -584,66 +983,17 @@ function App() {
     setSelectedMeal((current) => (current?.day === day ? null : current))
   }
 
-  async function generateAiMeals() {
-    try {
-      setAiStatus('loading')
-      setAiMessage('Generating OpenAI meal suggestions...')
-
-      const response = await fetch('/api/openai-meal-suggestions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          inventory,
-          family,
-          householdNeeds,
-        }),
-      })
-
-      const rawBody = await response.text()
-      if (!rawBody.trim()) {
-        throw new Error(
-          response.ok
-            ? 'The OpenAI suggestions endpoint returned an empty response.'
-            : `The OpenAI suggestions endpoint failed with status ${response.status}.`,
-        )
-      }
-
-      let data: { meals?: AISuggestedMeal[]; error?: string }
-
-      try {
-        data = JSON.parse(rawBody) as { meals?: AISuggestedMeal[]; error?: string }
-      } catch {
-        throw new Error(
-          response.ok
-            ? 'The OpenAI suggestions endpoint returned invalid JSON.'
-            : `The OpenAI suggestions endpoint failed with status ${response.status}.`,
-        )
-      }
-
-      if (!response.ok || !data.meals) {
-        throw new Error(
-          data.error ||
-            'OpenAI suggestions are unavailable. Configure OPENAI_API_KEY and use the Vercel server runtime.',
-        )
-      }
-
-      setAiMeals(data.meals)
-      setAiStatus('success')
-      setAiMessage('OpenAI meal suggestions are ready.')
-    } catch (error) {
-      setAiStatus('error')
-      setAiMessage(error instanceof Error ? error.message : 'OpenAI suggestions failed.')
-    }
-  }
-
   function loadSampleDemoData() {
     setInventory(sampleDemoInventory)
     setFamily(sampleDemoFamily)
+    setUserRecipes([])
     setHouseholdNeeds([])
     setCookedMeals({})
+    setMealCookingFor({})
+    setMealRecipeOverrides({})
     setShoppingChecked({})
+    setShoppingExtras([])
+    setPurchaseHistory([])
     setInventorySearch('')
     setBarcode('')
     setProductDraft(null)
@@ -722,7 +1072,100 @@ function App() {
     setFamily((current) => current.filter((member) => member.id !== memberId))
   }
 
+  function handleAddRecipe(event: FormEvent) {
+    event.preventDefault()
+
+    const ingredients = recipeForm.ingredients
+      .map((item) => ({
+        name: item.name.trim(),
+        amount: Number(item.amount) || 1,
+        unit: item.unit.trim(),
+      }))
+      .filter((item) => item.name)
+
+    if (!recipeForm.title.trim() || !ingredients.length) {
+      return
+    }
+
+    const steps = recipeForm.steps
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+
+    const healthHighlights = recipeForm.healthHighlights
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+
+    const allergens = recipeForm.allergens
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+
+    const recipe: Recipe = {
+      id: editingRecipeId ?? `user-recipe-${Date.now()}`,
+      title: titleCase(recipeForm.title.trim()),
+      description: recipeForm.description.trim(),
+      servings: Math.max(1, recipeForm.servings),
+      ingredients,
+      steps,
+      dietaryTags: recipeForm.dietaryTags,
+      allergens,
+      cookTime: Math.max(0, recipeForm.cookTime),
+      zoneFocus: recipeForm.zoneFocus,
+      nutrition: { calories: 0, protein: 0, fiber: 0, carbs: 0, fat: 0, sodium: 0 },
+      healthHighlights: healthHighlights.length ? healthHighlights : ['Custom recipe'],
+    }
+
+    setUserRecipes((current) => {
+      if (editingRecipeId) {
+        return current.map((existing) => (existing.id === editingRecipeId ? recipe : existing))
+      }
+
+      return [recipe, ...current]
+    })
+    setRecipeForm(emptyRecipeForm)
+    setEditingRecipeId(null)
+    setIsRecipeModalOpen(false)
+  }
+
+  function startEditingRecipe(recipe: Recipe) {
+    setEditingRecipeId(recipe.id)
+    setRecipeForm(recipeToForm(recipe))
+  }
+
+  function deleteUserRecipe(recipeId: string) {
+    setUserRecipes((current) => current.filter((recipe) => recipe.id !== recipeId))
+    setMealRecipeOverrides((current) => {
+      const next = { ...current }
+      Object.entries(next).forEach(([day, selectedRecipeId]) => {
+        if (selectedRecipeId === recipeId) {
+          delete next[day]
+        }
+      })
+      return next
+    })
+
+    if (editingRecipeId === recipeId) {
+      setEditingRecipeId(null)
+      setRecipeForm(emptyRecipeForm)
+    }
+  }
+
   function clearZone(zone: InventoryItem['zone']) {
+    const itemCount = inventory.filter((item) => item.zone === zone).length
+    if (!itemCount) {
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Clear ${zone}? This will remove ${itemCount} ${itemCount === 1 ? 'item' : 'items'} from ${zone}.`,
+    )
+
+    if (!confirmed) {
+      return
+    }
+
     setInventory((current) => current.filter((item) => item.zone !== zone))
   }
 
@@ -739,6 +1182,35 @@ function App() {
     return current.includes(value)
       ? current.filter((item) => item !== value)
       : [...current, value]
+  }
+
+  function updateRecipeIngredient(
+    index: number,
+    updater: (ingredient: (typeof emptyRecipeForm.ingredients)[number]) => (typeof emptyRecipeForm.ingredients)[number],
+  ) {
+    setRecipeForm((current) => ({
+      ...current,
+      ingredients: current.ingredients.map((ingredient, ingredientIndex) =>
+        ingredientIndex === index ? updater(ingredient) : ingredient,
+      ),
+    }))
+  }
+
+  function addRecipeIngredientRow() {
+    setRecipeForm((current) => ({
+      ...current,
+      ingredients: [...current.ingredients, { name: '', amount: '', unit: '' }],
+    }))
+  }
+
+  function removeRecipeIngredientRow(index: number) {
+    setRecipeForm((current) => ({
+      ...current,
+      ingredients:
+        current.ingredients.length === 1
+          ? [{ name: '', amount: '', unit: '' }]
+          : current.ingredients.filter((_, ingredientIndex) => ingredientIndex !== index),
+    }))
   }
 
   async function handleAuthSubmit(event: FormEvent) {
@@ -783,6 +1255,11 @@ function App() {
     const matched = meal.matchedIngredients.join(', ') || 'No exact inventory matches'
     const needed = meal.missingIngredients.join(', ') || 'Nothing else needed'
     const notes = meal.recipe.healthHighlights.join(' · ')
+    const cookingForLabel = getCookingForLabel(meal.day)
+    const scaledIngredients = meal.recipe.ingredients
+      .map((item) => formatRecipeIngredient(item, getCookingForCount(meal.day), meal.recipe.servings))
+      .map((item) => `<li>${item}</li>`)
+      .join('')
 
     printWindow.document.write(`<!doctype html>
 <html>
@@ -799,14 +1276,14 @@ function App() {
   </head>
   <body>
     <h1>${meal.recipe.title}</h1>
-    <p class="meta">${meal.day} · ${meal.recipe.cookTime} min · Serves ${meal.recipe.servings} · ${recipeTags}</p>
+    <p class="meta">${meal.day} · ${meal.recipe.cookTime} min · Recipe serves ${meal.recipe.servings} · Cooking for ${cookingForLabel} · ${recipeTags}</p>
     <div class="block">
       <h2>Description</h2>
       <p>${meal.recipe.description}</p>
     </div>
     <div class="block">
       <h2>Ingredients</h2>
-      <ul>${meal.recipe.ingredients.map((item) => `<li>${item}</li>`).join('')}</ul>
+      <ul>${scaledIngredients}</ul>
     </div>
     <div class="block">
       <h2>Method</h2>
@@ -862,7 +1339,7 @@ function App() {
       </section>`,
           )
           .join('')
-      : '<section><ul><li><div><strong>No shopping needed</strong><p>Your current meal plan is covered by tracked stock.</p></div></li></ul></section>'
+      : '<section><ul><li><div><strong>No shopping items yet</strong><p>Add missing ingredients from recipe views when you decide what to buy.</p></div></li></ul></section>'
 
     printWindow.document.write(`<!doctype html>
 <html>
@@ -882,7 +1359,7 @@ function App() {
   </head>
   <body>
     <h1>Shopping List</h1>
-    <p class="meta">Based on the current 7 day meal plan · ${shoppingList.length} item${shoppingList.length === 1 ? '' : 's'}</p>
+    <p class="meta">Saved shopping list · ${shoppingList.length} item${shoppingList.length === 1 ? '' : 's'}</p>
     ${itemsMarkup}
   </body>
 </html>`)
@@ -898,8 +1375,148 @@ function App() {
     }))
   }
 
+  function getCookingForValue(day: string): MealCookingFor {
+    return mealCookingFor[day] ?? 'all'
+  }
+
+  function getCookingForLabel(day: string) {
+    const value = getCookingForValue(day)
+    if (value === 'all') {
+      return family.length ? `all (${family.length})` : 'all'
+    }
+
+    return String(value)
+  }
+
+  function getCookingForCount(day: string) {
+    const value = getCookingForValue(day)
+    if (value === 'all') {
+      return Math.max(family.length, 1)
+    }
+
+    return value
+  }
+
+  function updateMealCookingFor(day: string, value: MealCookingFor) {
+    setMealCookingFor((current) => ({
+      ...current,
+      [day]: value,
+    }))
+  }
+
+  function updateMealRecipeOverride(day: string, recipeId: string) {
+    setMealRecipeOverrides((current) => {
+      if (!recipeId) {
+        const next = { ...current }
+        delete next[day]
+        return next
+      }
+
+      return {
+        ...current,
+        [day]: recipeId,
+      }
+    })
+  }
+
+  function inferShoppingZoneForItem(name: string): StorageZone {
+    const source = normalize(name)
+
+    if (['ice cream', 'frozen', 'frozen peas', 'frozen berries', 'chips'].some((term) => source.includes(term))) {
+      return 'Freezer'
+    }
+
+    if (
+      [
+        'milk',
+        'yogurt',
+        'yoghurt',
+        'cheese',
+        'butter',
+        'cream',
+        'egg',
+        'eggs',
+        'spinach',
+        'cucumber',
+        'salad',
+        'lettuce',
+        'fruit',
+        'vegetable',
+        'vegetables',
+        'chicken',
+        'fish',
+        'meat',
+        'fresh',
+      ].some((term) => source.includes(term))
+    ) {
+      return 'Fridge'
+    }
+
+    return 'Cupboard'
+  }
+
+  function addItemsToShoppingList(items: string[], neededFor: string, priority: 'High' | 'Medium' = 'Medium') {
+    const cleanedItems = items.map((item) => titleCase(item.trim())).filter(Boolean)
+    if (!cleanedItems.length) {
+      return
+    }
+
+    let addedCount = 0
+    let updatedCount = 0
+
+    setShoppingExtras((current) => {
+      const grouped = new Map(current.map((item) => [normalize(item.name), item] as const))
+
+      cleanedItems.forEach((name) => {
+        const key = normalize(name)
+        const existing = grouped.get(key)
+
+        if (existing) {
+          existing.neededFor = Array.from(new Set([...existing.neededFor, neededFor]))
+          if (priority === 'High') {
+            existing.priority = 'High'
+          }
+          updatedCount += 1
+          return
+        }
+
+        grouped.set(key, {
+          name,
+          zone: inferShoppingZoneForItem(name),
+          neededFor: [neededFor],
+          priority,
+        })
+        addedCount += 1
+      })
+
+      return Array.from(grouped.values())
+    })
+
+    if (addedCount && updatedCount) {
+      setShoppingFeedback(`Shopping list updated: ${addedCount} added, ${updatedCount} already there.`)
+      return
+    }
+
+    if (addedCount > 1) {
+      setShoppingFeedback(`${addedCount} items added to your shopping list.`)
+      return
+    }
+
+    if (addedCount === 1) {
+      setShoppingFeedback(`${cleanedItems[0]} added to your shopping list.`)
+      return
+    }
+
+    setShoppingFeedback('Shopping list updated.')
+  }
+
   return (
     <div className="app-shell">
+      {shoppingFeedback ? (
+        <div className="shopping-feedback" role="status" aria-live="polite">
+          {shoppingFeedback}
+        </div>
+      ) : null}
       <header className="hero">
         <div>
           <p className="eyebrow">7 Day Food Planner</p>
@@ -982,12 +1599,20 @@ function App() {
                   ? ` · NOVA ${productDraft.health.novaGroup}`
                   : ''}
               </p>
+              {duplicateDraftItems.length ? (
+                <p className="status loading">
+                  Already in {productDraft.zone}: {duplicateDraftItems
+                    .map((item) => `${item.name} (${item.quantity} ${item.unit})`)
+                    .join(', ')}
+                </p>
+              ) : null}
               <div className="inline-fields">
                 <label>
-                  How many in stock?
+                  Amount in stock
                   <input
                     type="number"
                     min="1"
+                    step="0.1"
                     value={productDraft.quantity}
                     onChange={(event) =>
                       setProductDraft((current) =>
@@ -997,7 +1622,29 @@ function App() {
                   />
                 </label>
                 <label>
-                  Unit
+                  % left
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={productDraft.remainingPercent ?? ''}
+                    onChange={(event) =>
+                      setProductDraft((current) =>
+                        current
+                          ? {
+                              ...current,
+                              remainingPercent: event.target.value
+                                ? Number(event.target.value)
+                                : undefined,
+                            }
+                          : current,
+                      )
+                    }
+                    placeholder="Optional"
+                  />
+                </label>
+                <label>
+                  Unit / measure
                   <input
                     value={productDraft.unit}
                     onChange={(event) =>
@@ -1005,6 +1652,7 @@ function App() {
                         current ? { ...current, unit: event.target.value } : current,
                       )
                     }
+                    placeholder="bag, g, potatoes"
                   />
                 </label>
                 <label>
@@ -1039,7 +1687,20 @@ function App() {
                       <p className="eyebrow">{zone}</p>
                       <h3>{zone}</h3>
                     </div>
-                    <span>{items.length} items</span>
+                    <div className="zone-card-actions">
+                      <span>{items.length} items</span>
+                      <button
+                        type="button"
+                        className="secondary summary-clear-button"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          clearZone(zone)
+                        }}
+                      >
+                        Clear {zone}
+                      </button>
+                    </div>
                   </div>
                 </summary>
                 <div className="inventory-table-wrap">
@@ -1059,6 +1720,7 @@ function App() {
                           brand: '',
                           categories: [],
                           quantity: manualItem.quantity,
+                          remainingPercent: undefined,
                           unit: manualItem.unit.trim(),
                           zone,
                           expiresOn: manualItem.expiresOn,
@@ -1084,6 +1746,7 @@ function App() {
                       <input
                         type="number"
                         min="1"
+                        step="0.1"
                         value={manualItem.zone === zone ? manualItem.quantity : 1}
                         onChange={(event) =>
                           setManualItem((current) => ({
@@ -1092,7 +1755,7 @@ function App() {
                             quantity: Number(event.target.value),
                           }))
                         }
-                        placeholder="Qty"
+                        placeholder="Amount"
                       />
                       <input
                         value={manualItem.zone === zone ? manualItem.unit : 'pack'}
@@ -1103,7 +1766,7 @@ function App() {
                             unit: event.target.value,
                           }))
                         }
-                        placeholder="Unit"
+                        placeholder="bag, g, potatoes"
                       />
                       <input
                         type="date"
@@ -1143,16 +1806,6 @@ function App() {
                         Scan
                       </button>
                     </div>
-                    <div className="storage-zone-actions">
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => clearZone(zone)}
-                      >
-                        Clear {zone}
-                      </button>
-                    </div>
-
                     {productDraft && productDraft.zone === zone ? (
                       <div className="draft-card storage-draft-card">
                         <div>
@@ -1165,12 +1818,20 @@ function App() {
                               : ''}
                           </p>
                         </div>
+                        {duplicateDraftItems.length ? (
+                          <p className="status loading">
+                            Already in {productDraft.zone}: {duplicateDraftItems
+                              .map((item) => `${item.name} (${item.quantity} ${item.unit})`)
+                              .join(', ')}
+                          </p>
+                        ) : null}
                         <div className="inline-fields">
                           <label>
                             How many in stock?
                             <input
                               type="number"
                               min="1"
+                              step="0.1"
                               value={productDraft.quantity}
                               onChange={(event) =>
                                 setProductDraft((current) =>
@@ -1182,7 +1843,30 @@ function App() {
                             />
                           </label>
                           <label>
-                            Unit
+                            % left
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={productDraft.remainingPercent ?? ''}
+                              onChange={(event) =>
+                                setProductDraft((current) =>
+                                  current
+                                    ? {
+                                        ...current,
+                                        remainingPercent: event.target.value
+                                          ? Number(event.target.value)
+                                          : undefined,
+                                        zone,
+                                      }
+                                    : current,
+                                )
+                              }
+                              placeholder="Optional"
+                            />
+                          </label>
+                          <label>
+                            Unit / measure
                             <input
                               value={productDraft.unit}
                               onChange={(event) =>
@@ -1190,6 +1874,7 @@ function App() {
                                   current ? { ...current, unit: event.target.value, zone } : current,
                                 )
                               }
+                              placeholder="bag, g, potatoes"
                             />
                           </label>
                         </div>
@@ -1210,7 +1895,7 @@ function App() {
                         </th>
                         <th>
                           <button type="button" className="table-sort" onClick={() => toggleInventorySort('quantity')}>
-                            Quantity
+                            Amount
                           </button>
                         </th>
                         <th>
@@ -1239,11 +1924,12 @@ function App() {
                                   }
                                 />
                               </td>
-                              <td data-label="Quantity">
+                              <td data-label="Amount">
                                 <div className="quantity-field">
                                   <input
                                     type="number"
                                     min="0"
+                                    step="0.1"
                                     value={item.quantity}
                                     onChange={(event) =>
                                       updateInventoryItem(item.id, (current) => ({
@@ -1252,7 +1938,12 @@ function App() {
                                       }))
                                     }
                                   />
-                                  <span>{item.unit}</span>
+                                  <span>
+                                    {item.unit}
+                                    {item.remainingPercent !== undefined
+                                      ? ` · ${item.remainingPercent}% left`
+                                      : ''}
+                                  </span>
                                 </div>
                               </td>
                               <td data-label="Use By / Best Before">
@@ -1306,13 +1997,47 @@ function App() {
                                         />
                                       </label>
                                       <label>
-                                        Unit
+                                        Unit / measure
                                         <input
                                           value={item.unit}
                                           onChange={(event) =>
                                             updateInventoryItem(item.id, (current) => ({
                                               ...current,
                                               unit: event.target.value,
+                                            }))
+                                          }
+                                          placeholder="bag, g, potatoes"
+                                        />
+                                      </label>
+                                      <label>
+                                        % left
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="100"
+                                          value={item.remainingPercent ?? ''}
+                                          onChange={(event) =>
+                                            updateInventoryItem(item.id, (current) => ({
+                                              ...current,
+                                              remainingPercent: event.target.value
+                                                ? Number(event.target.value)
+                                                : undefined,
+                                            }))
+                                          }
+                                        />
+                                      </label>
+                                      <label>
+                                        Rebuy every days
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          value={item.rebuyEveryDays ?? ''}
+                                          onChange={(event) =>
+                                            updateInventoryItem(item.id, (current) => ({
+                                              ...current,
+                                              rebuyEveryDays: event.target.value
+                                                ? Number(event.target.value)
+                                                : undefined,
                                             }))
                                           }
                                         />
@@ -1471,51 +2196,127 @@ function App() {
               <h2>Seven-day meal ideas</h2>
             </div>
             <div className="button-row">
-              <button type="button" className="secondary" onClick={() => void generateAiMeals()}>
-                Get OpenAI Suggestions
+              <input
+                value={recipeSearch}
+                onChange={(event) => setRecipeSearch(event.target.value)}
+                placeholder="Search meals"
+              />
+              <button type="button" className="secondary" onClick={() => setIsRecipeModalOpen(true)}>
+                Add your recipe
               </button>
             </div>
           </div>
-          <p className={`status ${aiStatus}`}>{aiMessage}</p>
           <div className="meal-rows">
-            {mealPlan.map((meal) => (
-              <article key={meal.day} className="meal-row">
-                <button
-                  type="button"
-                  className="meal-row-summary"
-                  onClick={() =>
-                    setOpenMealDay((current) => (current === meal.day ? null : meal.day))
-                  }
+            {filteredMealPlan.map((meal) => {
+              const coveredOnShoppingList = getShoppingListCoverage(meal.missingIngredients)
+              const stillNeeded = getOutstandingIngredients(meal.missingIngredients)
+              const cookingForLabel = getCookingForLabel(meal.day)
+
+              return (
+                <article
+                  key={meal.day}
+                  className={[
+                    'meal-row',
+                    cookedMeals[meal.day] ? 'meal-row-cooked' : '',
+                    openMealDay === meal.day ? 'meal-row-open' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
                 >
-                  <label className="checkbox-inline" onClick={(event) => event.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(cookedMeals[meal.day])}
-                      onChange={(event) =>
-                        setCookedMeals((current) => ({
-                          ...current,
-                          [meal.day]: event.target.checked,
-                        }))
-                      }
-                    />
-                    Cooked
-                  </label>
-                  <div className="meal-row-main">
-                    <strong>{meal.day}</strong>
-                    <span>{meal.recipe.title}</span>
-                  </div>
-                  <div className="meal-row-meta">
-                    <span>{meal.recipe.cookTime ? `${meal.recipe.cookTime} min` : 'Add more items'}</span>
-                    <span>{meal.missingIngredients.length} to buy</span>
-                  </div>
-                </button>
-                {openMealDay === meal.day ? (
+                  <button
+                    type="button"
+                    className="meal-row-summary"
+                    onClick={() =>
+                      setOpenMealDay((current) => (current === meal.day ? null : meal.day))
+                    }
+                  >
+                    <label className="checkbox-inline" onClick={(event) => event.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(cookedMeals[meal.day])}
+                        onChange={(event) =>
+                          setCookedMeals((current) => ({
+                            ...current,
+                            [meal.day]: event.target.checked,
+                          }))
+                        }
+                      />
+                      Cooked
+                    </label>
+                    <div className="meal-row-main">
+                      <strong>{meal.day}</strong>
+                      <span>{meal.recipe.title}</span>
+                    </div>
+                    <div className="meal-row-meta">
+                      <span>{meal.recipe.cookTime ? `${meal.recipe.cookTime} min` : 'Add more items'}</span>
+                      <span>Cooking for {cookingForLabel}</span>
+                      <span>{stillNeeded.length} to buy</span>
+                    </div>
+                  </button>
+                  {openMealDay === meal.day ? (
                 <div className="meal-row-details">
                   <p className="meal-description">{meal.recipe.description}</p>
+                  <p className="planner-summary">{meal.wasteReason}</p>
+                  <div className="inline-fields">
+                    <label>
+                      Cooking for
+                      <select
+                        value={String(getCookingForValue(meal.day))}
+                        onChange={(event) =>
+                          updateMealCookingFor(
+                            meal.day,
+                            event.target.value === 'all' ? 'all' : Number(event.target.value),
+                          )
+                        }
+                      >
+                        <option value="all">
+                          {family.length ? `All (${family.length})` : 'All'}
+                        </option>
+                        {Array.from({ length: Math.max(family.length, 1) }, (_, index) => index + 1).map(
+                          (count) => (
+                            <option key={count} value={count}>
+                              {count}
+                            </option>
+                          ),
+                        )}
+                      </select>
+                    </label>
+                    {userRecipes.length ? (
+                      <label>
+                        Use my recipe
+                        <select
+                          value={mealRecipeOverrides[meal.day] ?? ''}
+                          onChange={(event) => updateMealRecipeOverride(meal.day, event.target.value)}
+                        >
+                          <option value="">Planner choice</option>
+                          {userRecipes.map((recipe) => (
+                            <option key={recipe.id} value={recipe.id}>
+                              {recipe.title}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
+                  </div>
                   <div className="button-row">
                     <button type="button" onClick={() => setSelectedMeal(meal)}>
                       View recipe
                     </button>
+                    {meal.missingIngredients.length ? (
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() =>
+                          addItemsToShoppingList(
+                            meal.missingIngredients,
+                            `${meal.day}: ${meal.recipe.title}`,
+                            meal.score > 6 ? 'High' : 'Medium',
+                          )
+                        }
+                      >
+                        Add all to shopping list
+                      </button>
+                    ) : null}
                     <button type="button" className="secondary" onClick={() => regenerateMeal(meal.day)}>
                       Regenerate
                     </button>
@@ -1551,62 +2352,26 @@ function App() {
                       <dd>{meal.recipe.nutrition.sodium}mg</dd>
                     </div>
                   </dl>
-                  <p className="section-label">Matched from inventory</p>
+                  <p className="section-label">Already in inventory</p>
                   <p>{meal.matchedIngredients.join(', ') || 'No exact matches yet'}</p>
+                  <p className="section-label">Already on shopping list</p>
+                  <p>{coveredOnShoppingList.join(', ') || 'Nothing added yet'}</p>
                   <p className="section-label">Still needed</p>
-                  <p>{meal.missingIngredients.join(', ') || 'Nothing else needed'}</p>
+                  <p>{stillNeeded.join(', ') || 'Nothing else needed'}</p>
                   <p className="section-label">Health notes</p>
                   <p>{meal.recipe.healthHighlights.join(' · ')}</p>
                 </div>
-                ) : null}
-              </article>
-            ))}
+                  ) : null}
+                </article>
+              )
+            })}
+            {!filteredMealPlan.length ? (
+              <div className="draft-card">
+                <h3>No meals match that search</h3>
+                <p>Try a recipe name, ingredient, or dietary tag.</p>
+              </div>
+            ) : null}
           </div>
-          {aiMeals.length ? (
-            <div className="ai-suggestions-section">
-              <div className="panel-heading">
-                <div>
-                  <p className="eyebrow">OpenAI</p>
-                  <h2>AI meal suggestions</h2>
-                </div>
-              </div>
-              <div className="meal-rows">
-                {aiMeals.map((meal) => (
-                  <article key={`${meal.day}-${meal.title}`} className="meal-row ai-meal-row">
-                    <div className="meal-row-summary ai-meal-summary">
-                      <div className="meal-row-main">
-                        <strong>{meal.day}</strong>
-                        <span>{meal.title}</span>
-                      </div>
-                      <div className="meal-row-meta">
-                        <span>{meal.cookTime} min</span>
-                        <span>Serves {meal.servings}</span>
-                      </div>
-                    </div>
-                    <div className="meal-row-details">
-                      <p className="meal-description">{meal.summary}</p>
-                      <div className="button-row">
-                        <button type="button" onClick={() => setSelectedAiMeal(meal)}>
-                          View recipe
-                        </button>
-                      </div>
-                      <div className="tag-row">
-                        {meal.dietaryNotes.map((note) => (
-                          <span key={note} className="badge">
-                            {note}
-                          </span>
-                        ))}
-                      </div>
-                      <p className="section-label">Uses from inventory</p>
-                      <p>{meal.usesFromInventory.join(', ') || 'No specific inventory matches listed'}</p>
-                      <p className="section-label">Shopping needed</p>
-                      <p>{meal.shoppingNeeded.join(', ') || 'Nothing else needed'}</p>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </div>
-          ) : null}
         </section>
       </main>
 
@@ -1743,6 +2508,7 @@ function App() {
                 ))}
               </div>
               <form className="stack add-member-form" onSubmit={handleAddFamilyMember}>
+                <p className="section-label">Add family member</p>
                 <div className="inline-fields">
                   <label>
                     New member
@@ -1751,7 +2517,7 @@ function App() {
                       onChange={(event) =>
                         setMemberForm((current) => ({ ...current, name: event.target.value }))
                       }
-                      placeholder="Member 4"
+                      placeholder="Enter name"
                     />
                   </label>
                   <label>
@@ -1802,7 +2568,9 @@ function App() {
                     placeholder="peanuts, sesame"
                   />
                 </label>
-                <button type="submit">Add family member</button>
+                <button type="submit" disabled={!memberForm.name.trim()}>
+                  Add family member
+                </button>
               </form>
             </div>
           </section>
@@ -1941,14 +2709,45 @@ function App() {
                 ))}
               </div>
               <p className="planner-summary">
-                {selectedMeal.recipe.cookTime} min · Serves {selectedMeal.recipe.servings}
+                {selectedMeal.recipe.cookTime} min · Recipe serves {selectedMeal.recipe.servings} · Cooking for{' '}
+                {getCookingForLabel(selectedMeal.day)}
               </p>
+              <p className="planner-summary">{selectedMeal.wasteReason}</p>
+              <div className="inline-fields">
+                <label>
+                  Cooking for
+                  <select
+                    value={String(getCookingForValue(selectedMeal.day))}
+                    onChange={(event) =>
+                      updateMealCookingFor(
+                        selectedMeal.day,
+                        event.target.value === 'all' ? 'all' : Number(event.target.value),
+                      )
+                    }
+                  >
+                    <option value="all">{family.length ? `All (${family.length})` : 'All'}</option>
+                    {Array.from({ length: Math.max(family.length, 1) }, (_, index) => index + 1).map(
+                      (count) => (
+                        <option key={count} value={count}>
+                          {count}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </label>
+              </div>
               <div className="recipe-columns">
                 <div>
                   <p className="section-label">Ingredients</p>
                   <ul className="recipe-list">
                     {selectedMeal.recipe.ingredients.map((ingredient) => (
-                      <li key={ingredient}>{ingredient}</li>
+                      <li key={ingredient.name}>
+                        {formatRecipeIngredient(
+                          ingredient,
+                          getCookingForCount(selectedMeal.day),
+                          selectedMeal.recipe.servings,
+                        )}
+                      </li>
                     ))}
                   </ul>
                 </div>
@@ -1989,7 +2788,47 @@ function App() {
                 </div>
                 <div>
                   <p className="section-label">Still needed</p>
-                  <p>{selectedMeal.missingIngredients.join(', ') || 'Nothing else needed'}</p>
+                  {selectedMeal.missingIngredients.length ? (
+                    <>
+                      <div className="recipe-missing-actions">
+                        <button
+                          type="button"
+                          className="secondary compact-button"
+                          onClick={() =>
+                            addItemsToShoppingList(
+                              selectedMeal.missingIngredients,
+                              `${selectedMeal.day}: ${selectedMeal.recipe.title}`,
+                              selectedMeal.score > 6 ? 'High' : 'Medium',
+                            )
+                          }
+                        >
+                          Add all
+                        </button>
+                      </div>
+                      <ul className="recipe-missing-list">
+                        {selectedMeal.missingIngredients.map((ingredient) => (
+                          <li key={ingredient}>
+                            <span>{titleCase(ingredient)}</span>
+                            <button
+                              type="button"
+                              className="secondary compact-button"
+                              onClick={() =>
+                                addItemsToShoppingList(
+                                  [ingredient],
+                                  `${selectedMeal.day}: ${selectedMeal.recipe.title}`,
+                                  selectedMeal.score > 6 ? 'High' : 'Medium',
+                                )
+                              }
+                            >
+                              Add to shopping list
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : (
+                    <p>Nothing else needed</p>
+                  )}
                 </div>
               </div>
               <div>
@@ -2001,69 +2840,249 @@ function App() {
         </div>
       ) : null}
 
-      {selectedAiMeal ? (
-        <div className="modal-backdrop" onClick={() => setSelectedAiMeal(null)}>
-          <section className="modal-panel recipe-modal" onClick={(event) => event.stopPropagation()}>
+      {isRecipeModalOpen ? (
+        <div className="modal-backdrop" onClick={() => setIsRecipeModalOpen(false)}>
+          <section className="modal-panel recipe-editor-modal" onClick={(event) => event.stopPropagation()}>
             <div className="panel-heading">
               <div>
-                <p className="eyebrow">{selectedAiMeal.day}</p>
-                <h2>{selectedAiMeal.title}</h2>
+                <p className="eyebrow">Custom Recipe</p>
+                <h2>{editingRecipeId ? 'Edit your recipe' : 'Add your own meal'}</h2>
+                <p className="planner-summary">
+                  Required to save: title and at least one ingredient.
+                </p>
               </div>
-              <button type="button" className="secondary" onClick={() => setSelectedAiMeal(null)}>
+              <button type="button" className="secondary" onClick={() => setIsRecipeModalOpen(false)}>
                 Close
               </button>
             </div>
-            <div className="stack recipe-modal-body">
-              <p>{selectedAiMeal.summary}</p>
-              <p className="planner-summary">
-                {selectedAiMeal.cookTime} min · Serves {selectedAiMeal.servings}
-              </p>
-              <div className="tag-row">
-                {selectedAiMeal.dietaryNotes.map((note) => (
-                  <span key={note} className="badge">
-                    {note}
-                  </span>
+            {userRecipes.length ? (
+              <div className="stack saved-recipe-list">
+                <p className="section-label">Your saved recipes</p>
+                {userRecipes.map((recipe) => (
+                  <article key={recipe.id} className="saved-recipe-card">
+                    <div>
+                      <h3>{recipe.title}</h3>
+                      <p className="planner-summary">
+                        {recipe.cookTime} min · serves {recipe.servings}
+                      </p>
+                    </div>
+                    <div className="button-row">
+                      <button type="button" className="secondary compact-button" onClick={() => startEditingRecipe(recipe)}>
+                        Edit
+                      </button>
+                      <button type="button" className="secondary compact-button" onClick={() => deleteUserRecipe(recipe.id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </article>
                 ))}
               </div>
+            ) : null}
+            <form className="stack recipe-editor-form" onSubmit={handleAddRecipe}>
               <div className="recipe-columns">
-                <div>
+                <label>
+                  Title
+                  <input
+                    value={recipeForm.title}
+                    onChange={(event) =>
+                      setRecipeForm((current) => ({ ...current, title: event.target.value }))
+                    }
+                    placeholder="Roast potatoes and salmon"
+                  />
+                </label>
+                <label>
+                  Description
+                  <input
+                    value={recipeForm.description}
+                    onChange={(event) =>
+                      setRecipeForm((current) => ({ ...current, description: event.target.value }))
+                    }
+                    placeholder="Short meal description"
+                  />
+                </label>
+              </div>
+              <div className="recipe-columns">
+                <label>
+                  Recipe serves
+                  <input
+                    type="number"
+                    min="1"
+                    value={recipeForm.servings}
+                    onChange={(event) =>
+                      setRecipeForm((current) => ({
+                        ...current,
+                        servings: Number(event.target.value) || 1,
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  Cook time (min)
+                  <input
+                    type="number"
+                    min="0"
+                    value={recipeForm.cookTime}
+                    onChange={(event) =>
+                      setRecipeForm((current) => ({
+                        ...current,
+                        cookTime: Number(event.target.value) || 0,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+              <div className="recipe-columns">
+                <div className="member-section-block">
                   <p className="section-label">Ingredients</p>
-                  <ul className="recipe-list">
-                    {selectedAiMeal.ingredients.map((ingredient) => (
-                      <li key={ingredient}>{ingredient}</li>
+                  <div className="recipe-ingredient-list">
+                    {recipeForm.ingredients.map((ingredient, index) => (
+                      <div key={`ingredient-${index}`} className="recipe-ingredient-row">
+                        <input
+                          value={ingredient.name}
+                          onChange={(event) =>
+                            updateRecipeIngredient(index, (current) => ({
+                              ...current,
+                              name: event.target.value,
+                            }))
+                          }
+                          placeholder="Ingredient"
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={ingredient.amount}
+                          onChange={(event) =>
+                            updateRecipeIngredient(index, (current) => ({
+                              ...current,
+                              amount: event.target.value,
+                            }))
+                          }
+                          placeholder="Amount"
+                        />
+                        <input
+                          value={ingredient.unit}
+                          onChange={(event) =>
+                            updateRecipeIngredient(index, (current) => ({
+                              ...current,
+                              unit: event.target.value,
+                            }))
+                          }
+                          placeholder="Unit / measure"
+                        />
+                        <button
+                          type="button"
+                          className="secondary compact-button"
+                          onClick={() => removeRecipeIngredientRow(index)}
+                        >
+                          Remove
+                        </button>
+                      </div>
                     ))}
-                  </ul>
+                  </div>
+                  <button type="button" className="secondary compact-button" onClick={addRecipeIngredientRow}>
+                    Add ingredient
+                  </button>
                 </div>
-                <div>
-                  <p className="section-label">Method</p>
-                  <ol className="recipe-list">
-                    {selectedAiMeal.steps.map((step) => (
-                      <li key={step}>{step}</li>
-                    ))}
-                  </ol>
-                </div>
+                <label>
+                  Method steps
+                  <textarea
+                    rows={8}
+                    value={recipeForm.steps}
+                    onChange={(event) =>
+                      setRecipeForm((current) => ({ ...current, steps: event.target.value }))
+                    }
+                    placeholder={`Boil the potatoes until tender.\nRoast the salmon until just cooked.\nServe together with broccoli.`}
+                  />
+                </label>
               </div>
               <div className="recipe-columns">
-                <div>
-                  <p className="section-label">Why it fits</p>
-                  <p>{selectedAiMeal.whyItFits}</p>
-                </div>
-                <div>
-                  <p className="section-label">Nutrition focus</p>
-                  <p>{selectedAiMeal.nutritionFocus}</p>
+                <label>
+                  Allergens
+                  <input
+                    value={recipeForm.allergens}
+                    onChange={(event) =>
+                      setRecipeForm((current) => ({ ...current, allergens: event.target.value }))
+                    }
+                    placeholder="milk, fish"
+                  />
+                </label>
+                <label>
+                  Health notes
+                  <input
+                    value={recipeForm.healthHighlights}
+                    onChange={(event) =>
+                      setRecipeForm((current) => ({
+                        ...current,
+                        healthHighlights: event.target.value,
+                      }))
+                    }
+                    placeholder="High protein, freezer-friendly"
+                  />
+                </label>
+              </div>
+              <div className="member-section-block">
+                <p className="section-label">Dietary tags</p>
+                <div className="tag-row">
+                  {dietaryOptions.map((tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      className={recipeForm.dietaryTags.includes(tag) ? 'chip active' : 'chip'}
+                      onClick={() =>
+                        setRecipeForm((current) => ({
+                          ...current,
+                          dietaryTags: toggleSelection(current.dietaryTags, tag),
+                        }))
+                      }
+                    >
+                      {tag}
+                    </button>
+                  ))}
                 </div>
               </div>
-              <div className="recipe-columns">
-                <div>
-                  <p className="section-label">Uses from inventory</p>
-                  <p>{selectedAiMeal.usesFromInventory.join(', ') || 'No specific inventory matches listed'}</p>
-                </div>
-                <div>
-                  <p className="section-label">Shopping needed</p>
-                  <p>{selectedAiMeal.shoppingNeeded.join(', ') || 'Nothing else needed'}</p>
+              <div className="member-section-block">
+                <p className="section-label">Zone focus</p>
+                <div className="tag-row">
+                  {storageZones.map((zone) => (
+                    <button
+                      key={zone}
+                      type="button"
+                      className={recipeForm.zoneFocus.includes(zone) ? 'chip active' : 'chip'}
+                      onClick={() =>
+                        setRecipeForm((current) => ({
+                          ...current,
+                          zoneFocus: toggleSelection(current.zoneFocus, zone),
+                        }))
+                      }
+                    >
+                      {zone}
+                    </button>
+                  ))}
                 </div>
               </div>
-            </div>
+              <div className="button-row">
+                <button
+                  type="submit"
+                  disabled={
+                    !recipeForm.title.trim()
+                    || !recipeForm.ingredients.some((ingredient) => ingredient.name.trim())
+                  }
+                >
+                  {editingRecipeId ? 'Save changes' : 'Save recipe'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    setEditingRecipeId(null)
+                    setRecipeForm(emptyRecipeForm)
+                  }}
+                >
+                  {editingRecipeId ? 'Cancel edit' : 'Reset'}
+                </button>
+              </div>
+            </form>
           </section>
         </div>
       ) : null}
@@ -2076,7 +3095,7 @@ function App() {
                 <p className="eyebrow">Shopping</p>
                 <h2>Shopping list</h2>
                 <p className="planner-summary">
-                  Based on the current 7 day meal plan.
+                  Add items from recipes when you decide what to buy.
                 </p>
               </div>
               <div className="button-row">
@@ -2112,9 +3131,9 @@ function App() {
                                 checked={checked}
                                 onChange={() => toggleShoppingItem(item.name)}
                               />
-                              <div>
+                              <div className="shopping-item-copy">
                                 <strong>{item.name}</strong>
-                                <p>Needed for: {item.neededFor.join(', ')}</p>
+                                <span>Needed for: {item.neededFor.join(', ')}</span>
                               </div>
                             </label>
                             <span
@@ -2131,10 +3150,35 @@ function App() {
               </div>
             ) : (
               <div className="draft-card">
-                <h3>No shopping needed</h3>
-                <p>Your current seven-day plan is fully covered by items already in stock.</p>
+                <h3>No shopping items yet</h3>
+                <p>Add missing ingredients from recipe views to build your shopping list.</p>
               </div>
             )}
+            {suggestedRebuys.length ? (
+              <div className="shopping-zone-group shopping-suggestions">
+                <p className="section-label">You may also need</p>
+                <ul className="shopping-list shopping-list-detailed">
+                  {suggestedRebuys.map((item) => (
+                    <li key={`suggested-${item.name}`} className="shopping-item">
+                      <div>
+                        <strong>{item.name}</strong>
+                        <p>
+                          {item.dueLabel} · {item.zone} · every {item.rebuyEveryDays} day
+                          {item.rebuyEveryDays === 1 ? '' : 's'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="secondary compact-button"
+                        onClick={() => addItemsToShoppingList([item.name], `Suggested rebuy: ${item.name}`)}
+                      >
+                        Add
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </section>
         </div>
       ) : null}

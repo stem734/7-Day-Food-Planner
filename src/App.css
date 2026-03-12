@@ -305,19 +305,22 @@ label {
 }
 
 input,
+textarea,
 select {
   width: 100%;
   box-sizing: border-box;
   padding: 12px 14px;
-  border: 2px solid transparent;
+  border: 2px solid var(--border);
   border-radius: 6px;
   background: #ffffff;
   color: var(--foreground);
 }
 
 .panel input,
+.panel textarea,
 .panel select,
 .modal-panel input,
+.modal-panel textarea,
 .modal-panel select,
 .inventory-table input,
 .storage-tools input,
@@ -326,13 +329,16 @@ select {
 }
 
 .draft-card input,
+.draft-card textarea,
 .draft-card select,
 .member-card input,
+.member-card textarea,
 .member-card select {
   background: var(--muted);
 }
 
 input:focus,
+textarea:focus,
 select:focus {
   outline: none;
   border-color: var(--primary);
@@ -377,11 +383,31 @@ button.secondary,
 .table-sort {
   background: var(--muted);
   color: var(--foreground);
+  border: 2px solid var(--border);
 }
 
 button.secondary:hover,
 .chip:hover {
   background: #e5e7eb;
+  border-color: #cbd5e1;
+}
+
+.button-row button,
+.inline-fields button,
+.inline-fields select {
+  min-height: 52px;
+}
+
+.button-row button.secondary,
+.compact-button.secondary {
+  background: #ffffff;
+  border: 2px solid #cbd5e1;
+}
+
+.button-row button.secondary:hover,
+.compact-button.secondary:hover {
+  background: #eef2ff;
+  border-color: #93c5fd;
 }
 
 .status {
@@ -398,6 +424,21 @@ button.secondary:hover,
 
 .status.loading {
   color: var(--warning);
+}
+
+.shopping-feedback {
+  position: sticky;
+  top: 12px;
+  z-index: 30;
+  margin: 0 auto 12px;
+  width: fit-content;
+  max-width: min(100%, 560px);
+  padding: 10px 14px;
+  border: 2px solid var(--success);
+  background: #ecfdf5;
+  color: #065f46;
+  font-size: 0.95rem;
+  font-weight: 600;
 }
 
 .scanner {
@@ -475,6 +516,12 @@ button.secondary:hover,
   border: 2px solid var(--border);
 }
 
+.add-member-form {
+  padding: 18px;
+  background: #ffffff;
+  border: 2px solid var(--border);
+}
+
 .member-card-header {
   display: flex;
   justify-content: space-between;
@@ -526,6 +573,10 @@ button.secondary:hover,
   background: #ffffff;
 }
 
+.meal-row-cooked {
+  background: #f3f4f6;
+}
+
 .meal-row-summary {
   width: 100%;
   border: 0;
@@ -542,6 +593,29 @@ button.secondary:hover,
 .meal-row-summary:active {
   transform: none;
   background: #f9fafb;
+}
+
+.meal-row-open .meal-row-summary {
+  background: #dbeafe;
+}
+
+.meal-row-open .meal-row-summary:hover,
+.meal-row-open .meal-row-summary:active {
+  background: #bfdbfe;
+}
+
+.meal-row-cooked .meal-row-summary:hover,
+.meal-row-cooked .meal-row-summary:active {
+  background: #eceff3;
+}
+
+.meal-row-cooked.meal-row-open .meal-row-summary {
+  background: #d1d5db;
+}
+
+.meal-row-cooked.meal-row-open .meal-row-summary:hover,
+.meal-row-cooked.meal-row-open .meal-row-summary:active {
+  background: #c4cad3;
 }
 
 .inventory-section-summary::-webkit-details-marker {
@@ -622,6 +696,28 @@ button.secondary:hover,
   color: rgba(255, 255, 255, 0.84);
 }
 
+.zone-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.zone-card-header > div:first-child {
+  min-width: 140px;
+}
+
+.zone-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.zone-card-actions span {
+  white-space: nowrap;
+}
+
 .storage-tools {
   display: grid;
   gap: 12px;
@@ -640,9 +736,10 @@ button.secondary:hover,
   grid-template-columns: 2fr auto auto;
 }
 
-.storage-zone-actions {
-  display: flex;
-  justify-content: flex-start;
+.summary-clear-button {
+  padding: 8px 10px;
+  font-size: 0.82rem;
+  white-space: nowrap;
 }
 
 .storage-draft-card {
@@ -797,12 +894,21 @@ button.secondary:hover,
   align-items: flex-start;
 }
 
-.shopping-list-detailed strong {
-  display: block;
-  margin-bottom: 6px;
+.shopping-item-copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
 }
 
+.shopping-list-detailed strong {
+  display: inline;
+  margin: 0;
+}
+
+.shopping-item-copy span,
 .shopping-list-detailed p {
+  margin: 0;
   color: var(--ink-soft);
 }
 
@@ -818,6 +924,12 @@ button.secondary:hover,
 .shopping-zone-group {
   display: grid;
   gap: 10px;
+}
+
+.shopping-suggestions {
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 2px solid var(--border);
 }
 
 .shopping-item {
@@ -882,6 +994,10 @@ button.secondary:hover,
   width: min(860px, 100%);
 }
 
+.recipe-editor-modal {
+  width: min(980px, 100%);
+}
+
 .recipe-modal-body {
   margin-top: 18px;
 }
@@ -897,6 +1013,61 @@ button.secondary:hover,
   padding-left: 20px;
   display: grid;
   gap: 8px;
+}
+
+.recipe-editor-form textarea {
+  resize: vertical;
+  min-height: 160px;
+}
+
+.recipe-ingredient-list {
+  display: grid;
+  gap: 10px;
+}
+
+.recipe-ingredient-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) 110px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.saved-recipe-list {
+  margin-top: 18px;
+}
+
+.saved-recipe-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px;
+  background: var(--muted);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+}
+
+.recipe-missing-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.recipe-missing-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.recipe-missing-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--muted);
 }
 
 .app-footer {
@@ -935,7 +1106,14 @@ button.secondary:hover,
   .hero,
   .panel,
   .modal-panel {
-    padding: 18px;
+    padding: 14px;
+  }
+
+  .draft-card,
+  .member-card,
+  .storage-draft-card,
+  .saved-recipe-card {
+    padding: 12px;
   }
 
   .hero-metrics,
@@ -973,6 +1151,15 @@ button.secondary:hover,
     flex-direction: column;
   }
 
+  .zone-card-header {
+    align-items: flex-start;
+  }
+
+  .zone-card-actions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
   .member-card-header {
     align-items: stretch;
   }
@@ -992,7 +1179,7 @@ button.secondary:hover,
 
   .inventory-table tbody {
     display: grid;
-    gap: 12px;
+    gap: 8px;
   }
 
   .inventory-row,
@@ -1014,9 +1201,9 @@ button.secondary:hover,
   .inventory-row td {
     display: grid;
     grid-template-columns: minmax(120px, 150px) 1fr;
-    gap: 12px;
+    gap: 8px;
     align-items: center;
-    padding: 10px 12px;
+    padding: 8px 10px;
     border-bottom: 1px solid var(--border);
   }
 
@@ -1042,8 +1229,8 @@ button.secondary:hover,
 
   .inventory-table td input {
     min-width: 0;
-    padding: 8px 10px;
-    font-size: 0.92rem;
+    padding: 7px 9px;
+    font-size: 0.9rem;
   }
 
   .quantity-field,
@@ -1061,12 +1248,42 @@ button.secondary:hover,
     grid-template-columns: 1fr auto;
   }
 
+  .meal-rows,
+  .inventory-sections,
+  .member-editor-list {
+    gap: 10px;
+  }
+
+  .meal-row-summary {
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .meal-row-details {
+    padding: 0 12px 12px;
+  }
+
+  .meal-row-main span,
+  .meal-row-meta,
+  .meal-description,
+  .planner-summary {
+    font-size: 0.9rem;
+  }
+
+  .nutrition-grid div {
+    padding: 10px;
+  }
+
   .compact-button,
   .danger-icon-button {
     width: 100%;
   }
 
   .inventory-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .recipe-ingredient-row {
     grid-template-columns: 1fr;
   }
 
