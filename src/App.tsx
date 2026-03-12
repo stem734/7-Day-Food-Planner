@@ -965,25 +965,7 @@ function App() {
               </button>
             </div>
           </div>
-          <div className="inventory-overview-grid">
-            {inventoryByZone.map(({ zone, items }) => (
-              <article key={`${zone}-overview`} className={`overview-tile overview-${zone.toLowerCase()}`}>
-                <p className="eyebrow">{zone}</p>
-                <strong>{items.length}</strong>
-                <span>{items.length === 1 ? 'item tracked' : 'items tracked'}</span>
-              </article>
-            ))}
-          </div>
           <p className={`status ${lookupState}`}>{lookupMessage}</p>
-          {isScannerOpen && scannerZone === 'main' ? (
-            <div className="scanner scanner-inline">
-              <video ref={videoRef} muted playsInline />
-              <p>{scannerMessage}</p>
-              <button type="button" className="secondary" onClick={stopScanner}>
-                Close camera
-              </button>
-            </div>
-          ) : null}
           {productDraft ? (
             <div className="draft-card main-draft-card">
               <div className="panel-heading">
@@ -1216,15 +1198,6 @@ function App() {
                         </button>
                       </div>
                     ) : null}
-                    {isScannerOpen && scannerZone === zone ? (
-                      <div className="scanner">
-                        <video ref={videoRef} muted playsInline />
-                        <p>{scannerMessage}</p>
-                        <button type="button" className="secondary" onClick={stopScanner}>
-                          Close camera
-                        </button>
-                      </div>
-                    ) : null}
                     <p className={`status ${lookupState}`}>{lookupMessage}</p>
                   </div>
                   <table className="inventory-table">
@@ -1255,7 +1228,7 @@ function App() {
                         return (
                           <Fragment key={item.id}>
                             <tr className={isOpen ? 'inventory-row inventory-row-open' : 'inventory-row'}>
-                              <td>
+                              <td data-label="Name">
                                 <input
                                   value={item.name}
                                   onChange={(event) =>
@@ -1266,7 +1239,7 @@ function App() {
                                   }
                                 />
                               </td>
-                              <td>
+                              <td data-label="Quantity">
                                 <div className="quantity-field">
                                   <input
                                     type="number"
@@ -1282,7 +1255,7 @@ function App() {
                                   <span>{item.unit}</span>
                                 </div>
                               </td>
-                              <td>
+                              <td data-label="Use By / Best Before">
                                 <input
                                   type="date"
                                   value={item.expiresOn}
@@ -1294,7 +1267,7 @@ function App() {
                                   }
                                 />
                               </td>
-                              <td>
+                              <td data-label="Actions">
                                 <div className="row-actions">
                                   <button
                                     type="button"
@@ -1913,6 +1886,26 @@ function App() {
                     : 'Sign in to sync and back up your planner data across devices.'}
                 </p>
               </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {isScannerOpen ? (
+        <div className="modal-backdrop" onClick={stopScanner}>
+          <section className="modal-panel scanner-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Barcode Scanner</p>
+                <h2>{scannerZone === 'main' ? 'Scan item' : `Scan for ${scannerZone}`}</h2>
+              </div>
+              <button type="button" className="secondary" onClick={stopScanner}>
+                Close
+              </button>
+            </div>
+            <div className="scanner scanner-modal-body">
+              <video ref={videoRef} muted playsInline />
+              <p>{scannerMessage}</p>
             </div>
           </section>
         </div>

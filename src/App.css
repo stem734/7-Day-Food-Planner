@@ -186,59 +186,25 @@
   align-items: start;
 }
 
-.inventory-overview-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  margin: 18px 0 12px;
-}
-
-.overview-tile {
-  padding: 18px;
-  border-radius: 8px;
-  color: #ffffff;
-}
-
-.overview-tile strong {
-  display: block;
-  margin-top: 10px;
-  font-size: 2.4rem;
-  line-height: 1;
-  font-weight: 800;
-}
-
-.overview-tile span {
-  display: block;
-  margin-top: 6px;
-  color: rgba(255, 255, 255, 0.84);
-}
-
-.overview-cupboard,
 .inventory-section-cupboard .inventory-section-summary {
   background: var(--primary);
 }
 
-.overview-cupboard .eyebrow,
-.overview-cupboard span,
 .inventory-section-cupboard .inventory-section-summary .eyebrow,
 .inventory-section-cupboard .inventory-section-summary h3,
 .inventory-section-cupboard .inventory-section-summary span {
   color: #ffffff;
 }
 
-.overview-fridge,
 .inventory-section-fridge .inventory-section-summary {
   background: var(--secondary);
 }
 
-.overview-freezer,
 .inventory-section-freezer .inventory-section-summary {
   background: var(--accent);
   color: #111827;
 }
 
-.overview-freezer .eyebrow,
-.overview-freezer span,
 .inventory-section-freezer .inventory-section-summary .eyebrow,
 .inventory-section-freezer .inventory-section-summary h3,
 .inventory-section-freezer .inventory-section-summary span {
@@ -451,6 +417,14 @@ button.secondary:hover,
 .scanner-inline,
 .main-draft-card {
   margin-bottom: 16px;
+}
+
+.scanner-modal {
+  width: min(720px, 100%);
+}
+
+.scanner-modal-body {
+  margin-top: 16px;
 }
 
 .chip-grid,
@@ -939,7 +913,6 @@ button.secondary:hover,
   .hero,
   .dashboard,
   .inventory-sections,
-  .inventory-overview-grid,
   .recipe-columns {
     grid-template-columns: 1fr;
   }
@@ -984,6 +957,16 @@ button.secondary:hover,
     align-items: stretch;
   }
 
+  .inventory-toolbar,
+  .inventory-panel-actions {
+    align-items: stretch;
+    min-width: 0;
+  }
+
+  .inventory-panel-actions > * {
+    width: 100%;
+  }
+
   .member-card-header,
   .member-section-grid {
     grid-template-columns: 1fr;
@@ -1000,17 +983,43 @@ button.secondary:hover,
 
   .inventory-table {
     min-width: 0;
-    table-layout: fixed;
+    table-layout: auto;
   }
 
-  .inventory-table th,
-  .inventory-table td {
-    padding: 8px;
+  .inventory-table thead {
+    display: none;
   }
 
-  .inventory-table th {
-    font-size: 0.68rem;
-    letter-spacing: 0.05em;
+  .inventory-table tbody {
+    display: grid;
+    gap: 12px;
+  }
+
+  .inventory-row,
+  .inventory-detail-row {
+    display: block;
+  }
+
+  .inventory-row td {
+    display: grid;
+    grid-template-columns: minmax(120px, 150px) 1fr;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .inventory-row td::before {
+    content: attr(data-label);
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+
+  .inventory-row td:last-child {
+    border-bottom: 0;
   }
 
   .inventory-table td input {
@@ -1021,13 +1030,17 @@ button.secondary:hover,
 
   .quantity-field,
   .row-actions {
-    flex-direction: column;
     align-items: stretch;
   }
 
   .quantity-field input {
     width: 100%;
     min-width: 0;
+  }
+
+  .row-actions {
+    display: grid;
+    grid-template-columns: 1fr auto;
   }
 
   .compact-button,
@@ -1037,6 +1050,14 @@ button.secondary:hover,
 
   .inventory-detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .scanner-modal {
+    width: min(100%, 100%);
+  }
+
+  .scanner video {
+    min-height: 320px;
   }
 
   .modal-backdrop {
