@@ -1,41 +1,52 @@
 # 7 Day Food Planner
 
-A React + TypeScript web app for tracking cupboard, fridge, and freezer items, capturing products by barcode, and generating a seven-day meal plan that respects family dietary requirements.
+A React + TypeScript web app for tracking cupboard, fridge, and freezer items, capturing products by barcode, generating a seven-day meal plan, and turning missing ingredients into a shopping list.
 
-## What it does
+## Features
 
-- Tracks inventory by storage zone.
-- Saves inventory and family dietary data in local browser storage.
-- Looks up product metadata from the [Open Food Facts API](https://world.openfoodfacts.org/data).
-- Supports browser-based barcode scanning with the `BarcodeDetector` API when the browser exposes it.
-- Builds a seven-day meal plan from available ingredients and filters recipes against dietary tags and ingredient avoidances.
-- Shows recipe health information including calories, protein, fibre, and sodium.
+- Track inventory by storage zone.
+- Save inventory and family dietary rules in local browser storage.
+- Look up product metadata from the Open Food Facts API.
+- Scan barcodes in supported browsers with `BarcodeDetector`.
+- Generate a seven-day meal plan from current inventory.
+- Show dietary tags and health information for each recipe.
+- Build a shopping list from missing ingredients across the weekly plan.
+- Support optional email/password auth and cloud sync with Supabase.
 
-## Running locally
+## Run locally
 
 ```bash
 npm install
 npm run dev
 ```
 
-Then open the local Vite URL shown in the terminal.
-
-## Build and lint
+## Verify
 
 ```bash
 npm run lint
 npm run build
 ```
 
+## Cloud sync setup
+
+1. Copy `.env.example` to `.env`.
+2. Add your Supabase project values:
+
+```bash
+VITE_SUPABASE_URL=...
+VITE_SUPABASE_ANON_KEY=...
+```
+
+3. Run the SQL in [supabase-schema.sql](/Users/steve/Downloads/7%20Day%20Food%20Planner/supabase-schema.sql) in the Supabase SQL editor.
+
+This creates a `planner_state` table keyed by the authenticated user and applies row-level security so each user can access only their own planner data.
+
 ## Notes
 
-- Barcode camera scanning depends on browser support for `BarcodeDetector`. If it is unavailable, manual barcode entry still works.
-- Product metadata comes from Open Food Facts. Coverage varies by barcode and market.
-- The meal planner currently uses an in-app recipe library and scores recipes based on ingredient coverage plus simple nutrition weighting.
+- If Supabase env vars are not present, the app stays fully functional in local-only mode.
+- Open Food Facts product coverage varies by barcode and region.
+- Camera barcode scanning depends on browser support for `BarcodeDetector`.
 
-## Next useful extensions
+## Deployment
 
-- User accounts and shared household sync.
-- Editable recipe library or integration with a recipe API.
-- Shopping list generation from missing ingredients.
-- Expiry-first planning and waste reduction rules.
+This repo is ready for Vercel preview deploys. The production build is static, so no server runtime is required.

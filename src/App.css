@@ -68,7 +68,9 @@
 .zone-card-header,
 .meal-card-header,
 .button-row,
-.inline-fields {
+.inline-fields,
+.auth-grid,
+.tab-row {
   display: flex;
   gap: 12px;
 }
@@ -82,6 +84,10 @@
 .planner-summary {
   font-size: 0.92rem;
   color: var(--muted);
+}
+
+.auth-grid > * {
+  flex: 1;
 }
 
 .zone-grid,
@@ -101,7 +107,8 @@
 .zone-card,
 .draft-card,
 .scanner,
-.meal-card {
+.meal-card,
+.note-card {
   border: 1px solid rgba(84, 88, 63, 0.12);
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.72);
@@ -222,6 +229,12 @@ button:hover {
   transform: translateY(-1px);
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
 button.secondary {
   background: rgba(84, 88, 63, 0.1);
   color: var(--heading);
@@ -276,11 +289,20 @@ button.secondary {
   color: #8d471b;
 }
 
+.tab-row .chip {
+  flex: 1;
+}
+
 .badge {
   border-radius: 999px;
   padding: 6px 10px;
   font-size: 0.78rem;
   font-weight: 600;
+}
+
+.badge.priority-high {
+  background: rgba(47, 106, 53, 0.14);
+  color: #2f6a35;
 }
 
 .meal-card {
@@ -318,6 +340,27 @@ button.secondary {
   color: var(--heading);
 }
 
+.shopping-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.shopping-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(84, 88, 63, 0.1);
+}
+
+.shopping-list li:last-child {
+  border-bottom: 0;
+}
+
 @media (max-width: 980px) {
   .hero,
   .dashboard,
@@ -328,6 +371,10 @@ button.secondary {
 
   .hero-metrics {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .auth-grid {
+    flex-direction: column;
   }
 }
 

@@ -1,73 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import './App.css'
+import { dietaryOptions, emptyProductForm, storageZones } from './data'
+import { buildMealPlan, buildShoppingList, getRequiredTags, titleCase } from './lib/planner'
+import { loadInitialState, saveLocalState } from './lib/storage'
+import {
+  getCurrentUserId,
+  isSupabaseEnabled,
+  loadRemoteState,
+  saveRemoteState,
+  signInWithPassword,
+  signOut,
+  signUpWithPassword,
+  supabase,
+} from './lib/supabase'
+import type { AppState, DietaryTag, InventoryItem, StorageZone } from './types'
 
-type StorageZone = 'Cupboard' | 'Fridge' | 'Freezer'
-
-type DietaryTag =
-  | 'Vegetarian'
-  | 'Vegan'
-  | 'Gluten-Free'
-  | 'Dairy-Free'
-  | 'Nut-Free'
-  | 'High-Protein'
-  | 'Low-Sodium'
-
-type InventoryItem = {
-  id: string
-  name: string
-  quantity: number
-  unit: string
-  zone: StorageZone
-  expiresOn: string
-  barcode?: string
-  source: 'manual' | 'barcode'
-  dietaryTags: DietaryTag[]
-  allergens: string[]
-  health: {
-    calories?: number
-    protein?: number
-    fiber?: number
-    fat?: number
-    sugar?: number
-    sodium?: number
-  }
-}
-
-type FamilyMember = {
-  id: string
-  name: string
-  dietaryNeeds: DietaryTag[]
-  avoidIngredients: string
-}
-
-type Recipe = {
-  id: string
-  title: string
-  description: string
-  ingredients: string[]
-  dietaryTags: DietaryTag[]
-  allergens: string[]
-  cookTime: number
-  zoneFocus: StorageZone[]
-  nutrition: {
-    calories: number
-    protein: number
-    fiber: number
-    carbs: number
-    fat: number
-    sodium: number
-  }
-  healthHighlights: string[]
-}
-
-type PlannedMeal = {
-  day: string
-  recipe: Recipe
-  matchedIngredients: string[]
-  missingIngredients: string[]
-  score: number
-}
+type LookupState = 'idle' | 'loading' | 'error' | 'success'
 
 type BarcodeDetectorResult = {
   rawValue?: string
@@ -87,341 +36,66 @@ declare global {
   }
 }
 
-const STORAGE_KEY = 'seven-day-food-planner'
-
-const dietaryOptions: DietaryTag[] = [
-  'Vegetarian',
-  'Vegan',
-  'Gluten-Free',
-  'Dairy-Free',
-  'Nut-Free',
-  'High-Protein',
-  'Low-Sodium',
-]
-
-const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-
-const starterInventory: InventoryItem[] = [
-  {
-    id: 'i-1',
-    name: 'Chickpeas',
-    quantity: 2,
-    unit: 'tins',
-    zone: 'Cupboard',
-    expiresOn: '',
-    source: 'manual',
-    dietaryTags: ['Vegetarian', 'Vegan', 'Gluten-Free', 'Dairy-Free'],
-    allergens: [],
-    health: { calories: 164, protein: 8.9, fiber: 7.6, fat: 2.6, sugar: 4.8, sodium: 24 },
-  },
-  {
-    id: 'i-2',
-    name: 'Frozen mixed vegetables',
-    quantity: 1,
-    unit: 'bag',
-    zone: 'Freezer',
-    expiresOn: '',
-    source: 'manual',
-    dietaryTags: ['Vegetarian', 'Vegan', 'Gluten-Free', 'Dairy-Free'],
-    allergens: [],
-    health: { calories: 70, protein: 3.8, fiber: 4.6, fat: 0.7, sugar: 5.1, sodium: 40 },
-  },
-  {
-    id: 'i-3',
-    name: 'Greek yogurt',
-    quantity: 500,
-    unit: 'g',
-    zone: 'Fridge',
-    expiresOn: '',
-    source: 'manual',
-    dietaryTags: ['Vegetarian', 'High-Protein'],
-    allergens: ['milk'],
-    health: { calories: 97, protein: 9, fiber: 0, fat: 5, sugar: 3.6, sodium: 36 },
-  },
-]
-
-const starterFamily: FamilyMember[] = [
-  {
-    id: 'f-1',
-    name: 'Alex',
-    dietaryNeeds: ['Nut-Free'],
-    avoidIngredients: 'walnuts, peanuts',
-  },
-  {
-    id: 'f-2',
-    name: 'Sam',
-    dietaryNeeds: ['High-Protein'],
-    avoidIngredients: '',
-  },
-]
-
-const recipeLibrary: Recipe[] = [
-  {
-    id: 'r-1',
-    title: 'Smoky Chickpea Traybake',
-    description: 'Roasted chickpeas and vegetables with paprika, lemon, and herbs.',
-    ingredients: ['chickpeas', 'mixed vegetables', 'olive oil', 'paprika', 'lemon'],
-    dietaryTags: ['Vegetarian', 'Vegan', 'Gluten-Free', 'Dairy-Free', 'Nut-Free'],
-    allergens: [],
-    cookTime: 30,
-    zoneFocus: ['Cupboard', 'Freezer'],
-    nutrition: { calories: 430, protein: 18, fiber: 13, carbs: 48, fat: 14, sodium: 320 },
-    healthHighlights: ['High fibre', 'Plant-based protein', 'Good freezer use'],
-  },
-  {
-    id: 'r-2',
-    title: 'Herby Yogurt Chicken Bowls',
-    description: 'Chicken bowls with yogurt dressing, grains, and crunchy veg.',
-    ingredients: ['chicken breast', 'greek yogurt', 'rice', 'cucumber', 'spinach'],
-    dietaryTags: ['Gluten-Free', 'High-Protein', 'Nut-Free'],
-    allergens: ['milk'],
-    cookTime: 35,
-    zoneFocus: ['Fridge', 'Cupboard'],
-    nutrition: { calories: 520, protein: 39, fiber: 6, carbs: 42, fat: 18, sodium: 410 },
-    healthHighlights: ['High protein', 'Balanced carbs', 'Great for packed lunches'],
-  },
-  {
-    id: 'r-3',
-    title: 'Freezer Veg Stir-Fry',
-    description: 'A quick stir-fry built around freezer vegetables and pantry sauces.',
-    ingredients: ['mixed vegetables', 'soy sauce', 'rice noodles', 'garlic', 'tofu'],
-    dietaryTags: ['Vegetarian', 'Vegan', 'Dairy-Free'],
-    allergens: ['soy'],
-    cookTime: 20,
-    zoneFocus: ['Freezer', 'Cupboard'],
-    nutrition: { calories: 455, protein: 21, fiber: 8, carbs: 56, fat: 14, sodium: 620 },
-    healthHighlights: ['Fast weeknight meal', 'Uses freezer staples', 'Good vegetable density'],
-  },
-  {
-    id: 'r-4',
-    title: 'Lentil Cottage Pie',
-    description: 'Comforting lentil pie with mashed potato topping and hidden vegetables.',
-    ingredients: ['lentils', 'potatoes', 'carrots', 'peas', 'vegetable stock'],
-    dietaryTags: ['Vegetarian', 'Vegan', 'Dairy-Free', 'Nut-Free'],
-    allergens: ['celery'],
-    cookTime: 55,
-    zoneFocus: ['Cupboard', 'Freezer', 'Fridge'],
-    nutrition: { calories: 470, protein: 19, fiber: 15, carbs: 63, fat: 12, sodium: 360 },
-    healthHighlights: ['High fibre', 'Family-friendly', 'Good batch cook'],
-  },
-  {
-    id: 'r-5',
-    title: 'Salmon, Greens and New Potatoes',
-    description: 'A lighter dinner with omega-3 rich salmon and green vegetables.',
-    ingredients: ['salmon', 'potatoes', 'broccoli', 'peas', 'lemon'],
-    dietaryTags: ['Gluten-Free', 'High-Protein', 'Nut-Free'],
-    allergens: ['fish'],
-    cookTime: 28,
-    zoneFocus: ['Fridge', 'Freezer'],
-    nutrition: { calories: 510, protein: 37, fiber: 9, carbs: 35, fat: 24, sodium: 280 },
-    healthHighlights: ['Omega-3 fats', 'High protein', 'Lower sodium'],
-  },
-  {
-    id: 'r-6',
-    title: 'Black Bean Chili',
-    description: 'Hearty bean chili with tomatoes, peppers, and warming spices.',
-    ingredients: ['black beans', 'tomatoes', 'peppers', 'onion', 'cumin'],
-    dietaryTags: ['Vegetarian', 'Vegan', 'Gluten-Free', 'Dairy-Free', 'Nut-Free'],
-    allergens: [],
-    cookTime: 40,
-    zoneFocus: ['Cupboard', 'Fridge'],
-    nutrition: { calories: 445, protein: 17, fiber: 16, carbs: 58, fat: 11, sodium: 300 },
-    healthHighlights: ['High fibre', 'Budget-friendly', 'Great for leftovers'],
-  },
-  {
-    id: 'r-7',
-    title: 'Turkey Meatball Orzo Bake',
-    description: 'Protein-forward baked orzo with meatballs, tomato, and spinach.',
-    ingredients: ['turkey mince', 'orzo', 'tomatoes', 'spinach', 'mozzarella'],
-    dietaryTags: ['High-Protein', 'Nut-Free'],
-    allergens: ['milk', 'gluten'],
-    cookTime: 45,
-    zoneFocus: ['Fridge', 'Cupboard'],
-    nutrition: { calories: 560, protein: 34, fiber: 5, carbs: 49, fat: 24, sodium: 540 },
-    healthHighlights: ['High protein', 'Oven-to-table', 'Crowd-pleasing'],
-  },
-  {
-    id: 'r-8',
-    title: 'Coconut Red Lentil Curry',
-    description: 'Creamy lentil curry with spinach and fragrant spices.',
-    ingredients: ['red lentils', 'coconut milk', 'spinach', 'onion', 'curry paste'],
-    dietaryTags: ['Vegetarian', 'Vegan', 'Gluten-Free', 'Dairy-Free', 'Nut-Free'],
-    allergens: [],
-    cookTime: 32,
-    zoneFocus: ['Cupboard', 'Fridge'],
-    nutrition: { calories: 485, protein: 20, fiber: 12, carbs: 51, fat: 19, sodium: 340 },
-    healthHighlights: ['Iron-rich greens', 'High fibre', 'Plant-based dinner'],
-  },
-  {
-    id: 'r-9',
-    title: 'Sheet-Pan Sausage and Vegetables',
-    description: 'Roasted sausages with colourful vegetables for a simple dinner.',
-    ingredients: ['sausages', 'potatoes', 'peppers', 'broccoli', 'red onion'],
-    dietaryTags: ['Nut-Free'],
-    allergens: [],
-    cookTime: 38,
-    zoneFocus: ['Fridge', 'Freezer'],
-    nutrition: { calories: 590, protein: 24, fiber: 8, carbs: 39, fat: 36, sodium: 760 },
-    healthHighlights: ['Simple prep', 'Balanced plate', 'Flexible vegetables'],
-  },
-  {
-    id: 'r-10',
-    title: 'Yogurt Berry Breakfast Pots',
-    description: 'Make-ahead breakfast pots with yogurt, oats, berries, and seeds.',
-    ingredients: ['greek yogurt', 'berries', 'oats', 'chia seeds', 'honey'],
-    dietaryTags: ['Vegetarian', 'High-Protein', 'Nut-Free'],
-    allergens: ['milk', 'gluten'],
-    cookTime: 10,
-    zoneFocus: ['Fridge', 'Cupboard', 'Freezer'],
-    nutrition: { calories: 320, protein: 18, fiber: 7, carbs: 36, fat: 10, sodium: 90 },
-    healthHighlights: ['Breakfast prep', 'Protein rich', 'Supports satiety'],
-  },
-]
-
-const emptyProductForm = {
-  name: '',
-  quantity: 1,
-  unit: 'pack',
-  zone: 'Cupboard' as StorageZone,
-  expiresOn: '',
-}
-
 function normalize(value: string) {
   return value.trim().toLowerCase()
-}
-
-function titleCase(value: string) {
-  return value
-    .split(' ')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
 }
 
 function includesNormalized(haystack: string, needle: string) {
   return normalize(haystack).includes(normalize(needle))
 }
 
-function loadInitialState() {
-  const fallback = {
-    inventory: starterInventory,
-    family: starterFamily,
-    householdNeeds: ['Nut-Free'] as DietaryTag[],
-  }
+function buildScannedItem(barcode: string, product: Record<string, unknown>): InventoryItem {
+  const categoryText = Array.isArray(product.categories_tags)
+    ? product.categories_tags.join(' ')
+    : ''
+  const allergens = Array.isArray(product.allergens_tags)
+    ? product.allergens_tags.map((tag) => String(tag).split(':').pop() ?? String(tag))
+    : []
 
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) {
-      return fallback
+  const dietaryTags = dietaryOptions.filter((tag) => {
+    if (tag === 'Vegetarian') {
+      return includesNormalized(categoryText, 'vegetarian')
     }
-
-    const parsed = JSON.parse(raw) as typeof fallback
-    return {
-      inventory: parsed.inventory?.length ? parsed.inventory : fallback.inventory,
-      family: parsed.family?.length ? parsed.family : fallback.family,
-      householdNeeds: parsed.householdNeeds?.length
-        ? parsed.householdNeeds
-        : fallback.householdNeeds,
+    if (tag === 'Vegan') {
+      return includesNormalized(categoryText, 'vegan')
     }
-  } catch {
-    return fallback
-  }
-}
-
-function getFamilyAvoidances(family: FamilyMember[]) {
-  return family
-    .flatMap((member) => member.avoidIngredients.split(','))
-    .map((item) => normalize(item))
-    .filter(Boolean)
-}
-
-function recipeMatchesRequirements(
-  recipe: Recipe,
-  requiredTags: DietaryTag[],
-  avoidances: string[],
-) {
-  const meetsTags = requiredTags.every((tag) => recipe.dietaryTags.includes(tag))
-  const conflictsWithAvoidances = avoidances.some(
-    (avoidance) =>
-      recipe.ingredients.some((ingredient) => includesNormalized(ingredient, avoidance)) ||
-      recipe.allergens.some((allergen) => includesNormalized(allergen, avoidance)),
-  )
-
-  return meetsTags && !conflictsWithAvoidances
-}
-
-function buildMealPlan(
-  inventory: InventoryItem[],
-  family: FamilyMember[],
-  householdNeeds: DietaryTag[],
-) {
-  const requiredTags = Array.from(
-    new Set([...householdNeeds, ...family.flatMap((member) => member.dietaryNeeds)]),
-  )
-  const avoidances = getFamilyAvoidances(family)
-  const inventoryNames = inventory.map((item) => normalize(item.name))
-
-  const eligibleRecipes = recipeLibrary
-    .filter((recipe) => recipeMatchesRequirements(recipe, requiredTags, avoidances))
-    .map((recipe) => {
-      const matchedIngredients = recipe.ingredients.filter((ingredient) =>
-        inventoryNames.some((itemName) => includesNormalized(itemName, ingredient)),
-      )
-      const missingIngredients = recipe.ingredients.filter(
-        (ingredient) =>
-          !inventoryNames.some((itemName) => includesNormalized(itemName, ingredient)),
-      )
-
-      const coverage = matchedIngredients.length / recipe.ingredients.length
-      const healthScore =
-        recipe.nutrition.protein / 10 +
-        recipe.nutrition.fiber / 4 -
-        recipe.nutrition.sodium / 400
-
-      return {
-        recipe,
-        matchedIngredients,
-        missingIngredients,
-        score: coverage * 10 + healthScore,
-      }
-    })
-    .sort((left, right) => right.score - left.score)
-
-  const selected = eligibleRecipes.slice(0, 7)
-
-  return days.map((day, index) => {
-    const choice = selected[index] ?? eligibleRecipes[index % Math.max(eligibleRecipes.length, 1)]
-
-    if (!choice) {
-      return {
-        day,
-        recipe: {
-          id: `empty-${day}`,
-          title: 'No matching recipe yet',
-          description: 'Add a few more staples or relax one dietary rule to complete the week.',
-          ingredients: [],
-          dietaryTags: [],
-          allergens: [],
-          cookTime: 0,
-          zoneFocus: [],
-          nutrition: { calories: 0, protein: 0, fiber: 0, carbs: 0, fat: 0, sodium: 0 },
-          healthHighlights: ['Needs more matching recipes'],
-        },
-        matchedIngredients: [],
-        missingIngredients: [],
-        score: 0,
-      }
+    if (tag === 'Gluten-Free') {
+      return includesNormalized(categoryText, 'gluten-free')
     }
-
-    return { day, ...choice }
+    return false
   })
+
+  const nutriments = (product.nutriments as Record<string, unknown> | undefined) ?? {}
+
+  return {
+    id: `barcode-${Date.now()}`,
+    name: String(product.product_name || product.product_name_en || 'Scanned product'),
+    quantity: 1,
+    unit: 'pack',
+    zone: 'Cupboard',
+    expiresOn: '',
+    barcode,
+    source: 'barcode',
+    dietaryTags,
+    allergens,
+    health: {
+      calories: Number(nutriments['energy-kcal_100g']) || undefined,
+      protein: Number(nutriments.proteins_100g) || undefined,
+      fiber: Number(nutriments.fiber_100g) || undefined,
+      fat: Number(nutriments.fat_100g) || undefined,
+      sugar: Number(nutriments.sugars_100g) || undefined,
+      sodium: nutriments.sodium_100g ? Number(nutriments.sodium_100g) * 1000 : undefined,
+    },
+  }
 }
 
 function App() {
   const initialState = useMemo(() => loadInitialState(), [])
-  const [inventory, setInventory] = useState<InventoryItem[]>(initialState.inventory)
-  const [family, setFamily] = useState<FamilyMember[]>(initialState.family)
-  const [householdNeeds, setHouseholdNeeds] = useState<DietaryTag[]>(initialState.householdNeeds)
+  const [inventory, setInventory] = useState<AppState['inventory']>(initialState.inventory)
+  const [family, setFamily] = useState<AppState['family']>(initialState.family)
+  const [householdNeeds, setHouseholdNeeds] = useState<AppState['householdNeeds']>(
+    initialState.householdNeeds,
+  )
   const [manualItem, setManualItem] = useState(emptyProductForm)
   const [memberForm, setMemberForm] = useState({
     name: '',
@@ -429,35 +103,175 @@ function App() {
     avoidIngredients: '',
   })
   const [barcode, setBarcode] = useState('')
-  const [lookupState, setLookupState] = useState<'idle' | 'loading' | 'error' | 'success'>('idle')
+  const [lookupState, setLookupState] = useState<LookupState>('idle')
   const [lookupMessage, setLookupMessage] = useState('Ready to look up products from Open Food Facts.')
   const [productDraft, setProductDraft] = useState<InventoryItem | null>(null)
   const [isScannerOpen, setIsScannerOpen] = useState(false)
   const [scannerMessage, setScannerMessage] = useState('Use your camera to detect an EAN/UPC barcode.')
-  const [mealPlan, setMealPlan] = useState<PlannedMeal[]>([])
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin')
+  const [authForm, setAuthForm] = useState({ email: '', password: '' })
+  const [authStatus, setAuthStatus] = useState(
+    isSupabaseEnabled
+      ? 'Sign in to sync your planner across devices.'
+      : 'Cloud sync is off until Supabase environment variables are configured.',
+  )
+  const [userId, setUserId] = useState<string | null>(null)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [remoteReady, setRemoteReady] = useState(false)
+  const [isSavingRemote, setIsSavingRemote] = useState(false)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
 
-  useEffect(() => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        inventory,
-        family,
-        householdNeeds,
-      }),
-    )
-  }, [family, householdNeeds, inventory])
+  const appState = useMemo(
+    () => ({ inventory, family, householdNeeds }),
+    [family, householdNeeds, inventory],
+  )
+  const mealPlan = useMemo(
+    () => buildMealPlan(inventory, family, householdNeeds),
+    [family, householdNeeds, inventory],
+  )
+  const shoppingList = useMemo(() => buildShoppingList(mealPlan), [mealPlan])
+  const requiredTags = useMemo(() => getRequiredTags(appState), [appState])
+  const inventoryByZone = useMemo(
+    () =>
+      storageZones.map((zone) => ({
+        zone,
+        items: inventory.filter((item) => item.zone === zone),
+      })),
+    [inventory],
+  )
 
   useEffect(() => {
-    setMealPlan(buildMealPlan(inventory, family, householdNeeds))
-  }, [family, householdNeeds, inventory])
+    saveLocalState(appState)
+  }, [appState])
 
   useEffect(() => {
     return () => {
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
     }
   }, [])
+
+  useEffect(() => {
+    const client = supabase
+    if (!client) {
+      return
+    }
+
+    let mounted = true
+
+    void getCurrentUserId().then(async (id) => {
+      if (!mounted) {
+        return
+      }
+
+      setUserId(id)
+
+      const {
+        data: { session },
+      } = await client.auth.getSession()
+
+      if (!mounted) {
+        return
+      }
+
+      setUserEmail(session?.user.email ?? null)
+    })
+
+    const {
+      data: { subscription },
+    } = client.auth.onAuthStateChange((_event, session) => {
+      setUserId(session?.user.id ?? null)
+      setUserEmail(session?.user.email ?? null)
+      setRemoteReady(false)
+    })
+
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!userId) {
+      return
+    }
+
+    let cancelled = false
+
+    void loadRemoteState(userId)
+      .then((remoteState) => {
+        if (cancelled) {
+          return
+        }
+
+        if (remoteState) {
+          setInventory(remoteState.inventory)
+          setFamily(remoteState.family)
+          setHouseholdNeeds(remoteState.householdNeeds)
+          setAuthStatus('Cloud sync is active.')
+        } else {
+          setAuthStatus('Cloud account ready. The first sync will upload this device state.')
+        }
+
+        setRemoteReady(true)
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return
+        }
+
+        setRemoteReady(true)
+        setAuthStatus(
+          error instanceof Error ? error.message : 'Cloud sync could not load your saved state.',
+        )
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
+  useEffect(() => {
+    if (!userId || !remoteReady) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setIsSavingRemote(true)
+      void saveRemoteState(userId, appState)
+        .then(() => {
+          setAuthStatus('Changes synced to cloud.')
+        })
+        .catch((error: unknown) => {
+          setAuthStatus(
+            error instanceof Error ? error.message : 'Cloud sync failed while saving changes.',
+          )
+        })
+        .finally(() => {
+          setIsSavingRemote(false)
+        })
+    }, 700)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [appState, remoteReady, userId])
+
+  async function lookupBarcodeValue(value: string) {
+    const response = await fetch(
+      `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(value)}.json`,
+    )
+    const data = (await response.json()) as {
+      status?: number
+      product?: Record<string, unknown>
+    }
+
+    if (!response.ok || data.status !== 1 || !data.product) {
+      throw new Error('Product not found')
+    }
+
+    return buildScannedItem(value, data.product)
+  }
 
   async function lookupBarcode() {
     if (!barcode.trim()) {
@@ -470,63 +284,10 @@ function App() {
     setLookupMessage('Looking up product details...')
 
     try {
-      const response = await fetch(
-        `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`,
-      )
-      const data = await response.json()
-
-      if (!response.ok || data.status !== 1 || !data.product) {
-        throw new Error('Product not found')
-      }
-
-      const product = data.product
-      const name = product.product_name || product.product_name_en || 'Scanned product'
-      const allergens = Array.isArray(product.allergens_tags)
-        ? product.allergens_tags.map((tag: string) => tag.split(':').pop() ?? tag)
-        : []
-      const categoryText = Array.isArray(product.categories_tags)
-        ? product.categories_tags.join(' ')
-        : ''
-      const dietaryTags = dietaryOptions.filter((tag) => {
-        const normalizedTag = normalize(tag)
-        if (normalizedTag === 'vegetarian') {
-          return includesNormalized(categoryText, 'vegetarian')
-        }
-        if (normalizedTag === 'vegan') {
-          return includesNormalized(categoryText, 'vegan')
-        }
-        if (normalizedTag === 'gluten-free') {
-          return includesNormalized(categoryText, 'gluten-free')
-        }
-        return false
-      })
-
-      const draft: InventoryItem = {
-        id: `barcode-${Date.now()}`,
-        name,
-        quantity: 1,
-        unit: 'pack',
-        zone: 'Cupboard',
-        expiresOn: '',
-        barcode,
-        source: 'barcode',
-        dietaryTags,
-        allergens,
-        health: {
-          calories: product.nutriments?.['energy-kcal_100g'],
-          protein: product.nutriments?.proteins_100g,
-          fiber: product.nutriments?.fiber_100g,
-          fat: product.nutriments?.fat_100g,
-          sugar: product.nutriments?.sugars_100g,
-          sodium: product.nutriments?.sodium_100g
-            ? Number(product.nutriments.sodium_100g) * 1000
-            : undefined,
-        },
-      }
-
+      const draft = await lookupBarcodeValue(barcode)
       setProductDraft(draft)
       setLookupState('success')
-      setLookupMessage(`Found ${name}. Review the storage zone and quantity, then add it.`)
+      setLookupMessage(`Found ${draft.name}. Review the storage zone and quantity, then add it.`)
     } catch {
       setLookupState('error')
       setLookupMessage('No matching product was found from Open Food Facts for that barcode.')
@@ -572,7 +333,18 @@ function App() {
             setBarcode(code)
             setScannerMessage(`Detected barcode ${code}.`)
             stopScanner()
-            void lookupBarcodeFromValue(code)
+            setLookupState('loading')
+            setLookupMessage('Looking up detected barcode...')
+
+            try {
+              const draft = await lookupBarcodeValue(code)
+              setProductDraft(draft)
+              setLookupState('success')
+              setLookupMessage('Barcode detected and product details loaded.')
+            } catch {
+              setLookupState('error')
+              setLookupMessage('Barcode detected, but the product was not found in Open Food Facts.')
+            }
           }
         } catch {
           setScannerMessage('Scanning is active, but detection is still waiting for a clearer barcode.')
@@ -591,56 +363,6 @@ function App() {
       videoRef.current.srcObject = null
     }
     setIsScannerOpen(false)
-  }
-
-  async function lookupBarcodeFromValue(value: string) {
-    setBarcode(value)
-    setLookupState('loading')
-    setLookupMessage('Looking up detected barcode...')
-    await new Promise((resolve) => setTimeout(resolve, 150))
-    return fetch(
-      `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(value)}.json`,
-    )
-      .then(async (response) => {
-        const data = await response.json()
-        if (!response.ok || data.status !== 1 || !data.product) {
-          throw new Error('Product not found')
-        }
-
-        const product = data.product
-        const allergens = Array.isArray(product.allergens_tags)
-          ? product.allergens_tags.map((tag: string) => tag.split(':').pop() ?? tag)
-          : []
-
-        setProductDraft({
-          id: `barcode-${Date.now()}`,
-          name: product.product_name || product.product_name_en || 'Scanned product',
-          quantity: 1,
-          unit: 'pack',
-          zone: 'Cupboard',
-          expiresOn: '',
-          barcode: value,
-          source: 'barcode',
-          dietaryTags: [],
-          allergens,
-          health: {
-            calories: product.nutriments?.['energy-kcal_100g'],
-            protein: product.nutriments?.proteins_100g,
-            fiber: product.nutriments?.fiber_100g,
-            fat: product.nutriments?.fat_100g,
-            sugar: product.nutriments?.sugars_100g,
-            sodium: product.nutriments?.sodium_100g
-              ? Number(product.nutriments.sodium_100g) * 1000
-              : undefined,
-          },
-        })
-        setLookupState('success')
-        setLookupMessage('Barcode detected and product details loaded.')
-      })
-      .catch(() => {
-        setLookupState('error')
-        setLookupMessage('Barcode detected, but the product was not found in Open Food Facts.')
-      })
   }
 
   function addInventoryItem(item: InventoryItem) {
@@ -704,28 +426,47 @@ function App() {
       : [...current, value]
   }
 
-  const inventoryByZone = useMemo(
-    () =>
-      (['Cupboard', 'Fridge', 'Freezer'] as StorageZone[]).map((zone) => ({
-        zone,
-        items: inventory.filter((item) => item.zone === zone),
-      })),
-    [inventory],
-  )
+  async function handleAuthSubmit(event: FormEvent) {
+    event.preventDefault()
+    if (!isSupabaseEnabled) {
+      return
+    }
 
-  const requiredTags = Array.from(
-    new Set([...householdNeeds, ...family.flatMap((member) => member.dietaryNeeds)]),
-  )
+    try {
+      setAuthStatus(authMode === 'signin' ? 'Signing in...' : 'Creating your account...')
+      if (authMode === 'signin') {
+        await signInWithPassword(authForm.email, authForm.password)
+        setAuthStatus('Signed in. Syncing your household data...')
+      } else {
+        await signUpWithPassword(authForm.email, authForm.password)
+        setAuthStatus('Account created. Check your inbox if email confirmation is enabled.')
+      }
+    } catch (error: unknown) {
+      setAuthStatus(error instanceof Error ? error.message : 'Authentication failed.')
+    }
+  }
+
+  async function handleSignOut() {
+    try {
+      await signOut()
+      setAuthStatus('Signed out. Local data remains on this device.')
+      setUserId(null)
+      setUserEmail(null)
+      setRemoteReady(false)
+    } catch (error: unknown) {
+      setAuthStatus(error instanceof Error ? error.message : 'Sign out failed.')
+    }
+  }
 
   return (
     <div className="app-shell">
       <header className="hero">
         <div>
           <p className="eyebrow">7 Day Food Planner</p>
-          <h1>Plan meals from what your family already has.</h1>
+          <h1>Plan meals from your pantry, then sync the household plan.</h1>
           <p className="hero-copy">
             Track cupboard, fridge, and freezer items, scan barcodes with Open Food Facts,
-            and build a weekly meal plan that respects household dietary needs.
+            generate a seven-day meal plan, and turn recipe gaps into a shopping list.
           </p>
         </div>
         <div className="hero-metrics">
@@ -734,8 +475,8 @@ function App() {
             <p>Tracked items</p>
           </article>
           <article>
-            <span>{family.length}</span>
-            <p>Family profiles</p>
+            <span>{shoppingList.length}</span>
+            <p>Shopping items</p>
           </article>
           <article>
             <span>{mealPlan.filter((meal) => meal.score > 0).length}</span>
@@ -745,6 +486,88 @@ function App() {
       </header>
 
       <main className="dashboard">
+        <section className="panel panel-wide">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Cloud Sync</p>
+              <h2>Accounts and shared household state</h2>
+            </div>
+            <div className="planner-summary">
+              <span>{isSupabaseEnabled ? 'Supabase configured' : 'Local-only mode'}</span>
+            </div>
+          </div>
+          <div className="auth-grid">
+            <div className="stack">
+              <p className={`status ${isSupabaseEnabled ? 'success' : 'loading'}`}>{authStatus}</p>
+              {userId ? (
+                <div className="draft-card">
+                  <h3>{userEmail ?? 'Signed-in user'}</h3>
+                  <p>
+                    {isSavingRemote ? 'Syncing latest changes...' : 'Cloud sync is active for this household.'}
+                  </p>
+                  <button type="button" className="secondary" onClick={() => void handleSignOut()}>
+                    Sign out
+                  </button>
+                </div>
+              ) : (
+                <form className="stack" onSubmit={handleAuthSubmit}>
+                  <div className="tab-row">
+                    <button
+                      type="button"
+                      className={authMode === 'signin' ? 'chip active' : 'chip'}
+                      onClick={() => setAuthMode('signin')}
+                    >
+                      Sign in
+                    </button>
+                    <button
+                      type="button"
+                      className={authMode === 'signup' ? 'chip active' : 'chip'}
+                      onClick={() => setAuthMode('signup')}
+                    >
+                      Create account
+                    </button>
+                  </div>
+                  <label>
+                    Email
+                    <input
+                      type="email"
+                      value={authForm.email}
+                      onChange={(event) =>
+                        setAuthForm((current) => ({ ...current, email: event.target.value }))
+                      }
+                      placeholder="family@example.com"
+                    />
+                  </label>
+                  <label>
+                    Password
+                    <input
+                      type="password"
+                      value={authForm.password}
+                      onChange={(event) =>
+                        setAuthForm((current) => ({ ...current, password: event.target.value }))
+                      }
+                      placeholder="Choose a strong password"
+                    />
+                  </label>
+                  <button type="submit" disabled={!isSupabaseEnabled}>
+                    {authMode === 'signin' ? 'Sign in and sync' : 'Create synced account'}
+                  </button>
+                </form>
+              )}
+            </div>
+            <div className="stack note-card">
+              <p className="section-label">Setup note</p>
+              <p>
+                Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to enable cloud sign-in,
+                then create the `planner_state` table described in the README.
+              </p>
+              <p>
+                Until then, the planner still works locally in this browser with no backend required.
+              </p>
+            </div>
+          </div>
+        </section>
+
         <section className="panel panel-wide">
           <div className="panel-heading">
             <div>
@@ -834,9 +657,11 @@ function App() {
                     }))
                   }
                 >
-                  <option value="Cupboard">Cupboard</option>
-                  <option value="Fridge">Fridge</option>
-                  <option value="Freezer">Freezer</option>
+                  {storageZones.map((zone) => (
+                    <option key={zone} value={zone}>
+                      {zone}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label>
@@ -910,9 +735,11 @@ function App() {
                         )
                       }
                     >
-                      <option value="Cupboard">Cupboard</option>
-                      <option value="Fridge">Fridge</option>
-                      <option value="Freezer">Freezer</option>
+                      {storageZones.map((zone) => (
+                        <option key={zone} value={zone}>
+                          {zone}
+                        </option>
+                      ))}
                     </select>
                   </label>
                   <label>
@@ -923,9 +750,7 @@ function App() {
                       value={productDraft.quantity}
                       onChange={(event) =>
                         setProductDraft((current) =>
-                          current
-                            ? { ...current, quantity: Number(event.target.value) }
-                            : current,
+                          current ? { ...current, quantity: Number(event.target.value) } : current,
                         )
                       }
                     />
@@ -1021,6 +846,42 @@ function App() {
               </label>
               <button type="submit">Add family member</button>
             </form>
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Shopping</p>
+              <h2>Generated shopping list</h2>
+            </div>
+          </div>
+          <div className="stack">
+            <p className="planner-summary">
+              Built directly from the missing ingredients across the seven-day plan.
+            </p>
+            <ul className="shopping-list">
+              {shoppingList.length ? (
+                shoppingList.map((item) => (
+                  <li key={item.name}>
+                    <div>
+                      <strong>{item.name}</strong>
+                      <p>Needed for {item.neededFor.join(', ')}</p>
+                    </div>
+                    <span className={`badge ${item.priority === 'High' ? 'priority-high' : ''}`}>
+                      {item.priority}
+                    </span>
+                  </li>
+                ))
+              ) : (
+                <li>
+                  <div>
+                    <strong>No shopping gaps right now</strong>
+                    <p>Your current inventory covers the selected recipes.</p>
+                  </div>
+                </li>
+              )}
+            </ul>
           </div>
         </section>
 
