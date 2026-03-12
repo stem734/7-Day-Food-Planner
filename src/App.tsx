@@ -187,6 +187,7 @@ function App() {
   const [lookupMessage, setLookupMessage] = useState('Ready to look up products from Open Food Facts.')
   const [productDraft, setProductDraft] = useState<InventoryItem | null>(null)
   const [isScannerOpen, setIsScannerOpen] = useState(false)
+  const [scannerZone, setScannerZone] = useState<'main' | InventoryItem['zone'] | null>(null)
   const [scannerMessage, setScannerMessage] = useState('Use your camera to detect an EAN/UPC barcode.')
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin')
   const [authForm, setAuthForm] = useState({ email: '', password: '' })
@@ -229,6 +230,7 @@ function App() {
   const [openInventoryDetails, setOpenInventoryDetails] = useState<Record<string, boolean>>({})
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
+  const scannerIntervalRef = useRef<number | null>(null)
 
   const appState = useMemo(
     () => ({ inventory, family, householdNeeds, cookedMeals, shoppingChecked }),
@@ -322,9 +324,23 @@ function App() {
 
   useEffect(() => {
     return () => {
+      if (scannerIntervalRef.current) {
+        window.clearInterval(scannerIntervalRef.current)
+      }
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
     }
   }, [])
+
+  useEffect(() => {
+    if (!isScannerOpen || !videoRef.current || !mediaStreamRef.current) {
+      return
+    }
+
+    videoRef.current.srcObject = mediaStreamRef.current
+    void videoRef.current.play().catch(() => {
+      setScannerMessage('Camera opened, but playback was blocked. Tap scan again if needed.')
+    })
+  }, [isScannerOpen, scannerZone])
 
   useEffect(() => {
     const client = supabase
@@ -473,32 +489,34 @@ function App() {
     }
   }
 
-  async function startScanner() {
-    if (!window.BarcodeDetector) {
-      setScannerMessage('BarcodeDetector is not available in this browser. Use manual barcode entry instead.')
-      setIsScannerOpen(true)
-      return
-    }
-
+  async function startScanner(zone: 'main' | InventoryItem['zone'] = 'main') {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: 'environment' } },
       })
 
       mediaStreamRef.current = stream
+      setScannerZone(zone)
       setIsScannerOpen(true)
-      setScannerMessage('Point the camera at a barcode.')
+      setScannerMessage(
+        window.BarcodeDetector
+          ? 'Point the camera at a barcode.'
+          : 'Camera is open, but barcode detection is not available in this browser. Enter the barcode manually if needed.',
+      )
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play()
+      if (!window.BarcodeDetector) {
+        return
       }
 
       const detector = new window.BarcodeDetector({
         formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'],
       })
 
-      const intervalId = window.setInterval(async () => {
+      if (scannerIntervalRef.current) {
+        window.clearInterval(scannerIntervalRef.current)
+      }
+
+      scannerIntervalRef.current = window.setInterval(async () => {
         if (!videoRef.current) {
           return
         }
@@ -508,7 +526,10 @@ function App() {
           const code = results[0]?.rawValue
 
           if (code) {
-            window.clearInterval(intervalId)
+            if (scannerIntervalRef.current) {
+              window.clearInterval(scannerIntervalRef.current)
+              scannerIntervalRef.current = null
+            }
             setBarcode(code)
             setScannerMessage(`Detected barcode ${code}.`)
             stopScanner()
@@ -517,7 +538,7 @@ function App() {
 
             try {
               const draft = await lookupBarcodeValue(code)
-              setProductDraft(draft)
+              setProductDraft(zone === 'main' ? draft : { ...draft, zone })
               setLookupState('success')
               setLookupMessage('Barcode detected and product details loaded.')
             } catch {
@@ -531,17 +552,23 @@ function App() {
       }, 900)
     } catch {
       setScannerMessage('Camera access was blocked. Manual barcode entry is still available.')
+      setScannerZone(zone)
       setIsScannerOpen(true)
     }
   }
 
   function stopScanner() {
+    if (scannerIntervalRef.current) {
+      window.clearInterval(scannerIntervalRef.current)
+      scannerIntervalRef.current = null
+    }
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
     mediaStreamRef.current = null
     if (videoRef.current) {
       videoRef.current.srcObject = null
     }
     setIsScannerOpen(false)
+    setScannerZone(null)
   }
 
   function addInventoryItem(item: InventoryItem) {
@@ -933,7 +960,7 @@ function App() {
               <button type="button" onClick={() => void lookupBarcode()}>
                 Lookup item
               </button>
-              <button type="button" className="secondary" onClick={() => void startScanner()}>
+              <button type="button" className="secondary" onClick={() => void startScanner('main')}>
                 Scan item
               </button>
             </div>
@@ -948,7 +975,7 @@ function App() {
             ))}
           </div>
           <p className={`status ${lookupState}`}>{lookupMessage}</p>
-          {isScannerOpen ? (
+          {isScannerOpen && scannerZone === 'main' ? (
             <div className="scanner scanner-inline">
               <video ref={videoRef} muted playsInline />
               <p>{scannerMessage}</p>
@@ -1130,7 +1157,7 @@ function App() {
                       >
                         Lookup
                       </button>
-                      <button type="button" className="secondary" onClick={() => void startScanner()}>
+                      <button type="button" className="secondary" onClick={() => void startScanner(zone)}>
                         Scan
                       </button>
                     </div>
@@ -1189,7 +1216,7 @@ function App() {
                         </button>
                       </div>
                     ) : null}
-                    {isScannerOpen && productDraft?.zone === zone ? (
+                    {isScannerOpen && scannerZone === zone ? (
                       <div className="scanner">
                         <video ref={videoRef} muted playsInline />
                         <p>{scannerMessage}</p>
