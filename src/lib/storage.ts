@@ -17,6 +17,7 @@ export function loadInitialState(): AppState {
         ? parsed.householdNeeds
         : defaultState.householdNeeds,
       cookedMeals: parsed.cookedMeals ?? defaultState.cookedMeals,
+      shoppingChecked: parsed.shoppingChecked ?? defaultState.shoppingChecked,
     }
   } catch {
     return defaultState

@@ -8,6 +8,7 @@ import type {
   PlannedMeal,
   Recipe,
   ShoppingListItem,
+  StorageZone,
 } from '../types'
 
 function normalize(value: string) {
@@ -24,6 +25,46 @@ export function titleCase(value: string) {
 
 function includesNormalized(haystack: string, needle: string) {
   return normalize(haystack).includes(normalize(needle))
+}
+
+function inferShoppingZone(ingredient: string): StorageZone {
+  const source = normalize(ingredient)
+
+  if (
+    ['ice cream', 'frozen', 'frozen peas', 'frozen berries', 'chips'].some((term) =>
+      source.includes(term),
+    )
+  ) {
+    return 'Freezer'
+  }
+
+  if (
+    [
+      'milk',
+      'yogurt',
+      'yoghurt',
+      'cheese',
+      'butter',
+      'cream',
+      'egg',
+      'eggs',
+      'spinach',
+      'cucumber',
+      'salad',
+      'lettuce',
+      'fruit',
+      'vegetable',
+      'vegetables',
+      'chicken',
+      'fish',
+      'meat',
+      'fresh',
+    ].some((term) => source.includes(term))
+  ) {
+    return 'Fridge'
+  }
+
+  return 'Cupboard'
 }
 
 export function getFamilyAvoidances(family: FamilyMember[]) {
@@ -81,7 +122,9 @@ function emptyMeal(day: string): PlannedMeal {
       id: `empty-${day}`,
       title: 'No matching recipe yet',
       description: 'Add a few more staples or relax one dietary rule to complete the week.',
+      servings: 0,
       ingredients: [],
+      steps: [],
       dietaryTags: [],
       allergens: [],
       cookTime: 0,
@@ -99,12 +142,14 @@ export function buildMealPlan(
   inventory: InventoryItem[],
   family: FamilyMember[],
   householdNeeds: DietaryTag[],
+  rerolls: Record<string, number> = {},
 ) {
   const requiredTags = getRequiredTags({
     inventory,
     family,
     householdNeeds,
     cookedMeals: {},
+    shoppingChecked: {},
   })
   const avoidances = getFamilyAvoidances(family)
   const inventoryNames = inventory.map((item) => normalize(item.name))
@@ -135,10 +180,11 @@ export function buildMealPlan(
     })
     .sort((left, right) => right.score - left.score)
 
-  const selected = eligibleRecipes.slice(0, 7)
-
   return days.map((day, index) => {
-    const choice = selected[index] ?? eligibleRecipes[index % Math.max(eligibleRecipes.length, 1)]
+    const recipeCount = Math.max(eligibleRecipes.length, 1)
+    const choice =
+      eligibleRecipes[(index + (rerolls[day] ?? 0)) % recipeCount] ??
+      eligibleRecipes[index % recipeCount]
     return choice ? { day, ...choice } : emptyMeal(day)
   })
 }
@@ -161,6 +207,7 @@ export function buildShoppingList(mealPlan: PlannedMeal[]): ShoppingListItem[] {
 
       grouped.set(key, {
         name: titleCase(ingredient),
+        zone: inferShoppingZone(ingredient),
         neededFor: [meal.day],
         priority: meal.score > 6 ? 'High' : 'Medium',
       })
@@ -168,6 +215,13 @@ export function buildShoppingList(mealPlan: PlannedMeal[]): ShoppingListItem[] {
   })
 
   return Array.from(grouped.values()).sort((left, right) => {
+    const zoneOrder: StorageZone[] = ['Cupboard', 'Fridge', 'Freezer']
+    const zoneDifference = zoneOrder.indexOf(left.zone) - zoneOrder.indexOf(right.zone)
+
+    if (zoneDifference !== 0) {
+      return zoneDifference
+    }
+
     if (left.priority !== right.priority) {
       return left.priority === 'High' ? -1 : 1
     }

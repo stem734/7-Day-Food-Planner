@@ -1,25 +1,29 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
+
 :root {
-  font-family:
-    "Avenir Next",
-    "Segoe UI",
-    sans-serif;
+  font-family: 'Outfit', sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #d8ddf0;
-  background:
-    radial-gradient(circle at top, rgba(82, 127, 255, 0.14), transparent 24%),
-    linear-gradient(180deg, #070b16 0%, #090f1d 38%, #06070d 100%);
+  color: #111827;
+  background: #ffffff;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  --text: #d8ddf0;
-  --heading: #f8fbff;
-  --muted: #8f98bb;
-  --action: linear-gradient(135deg, #84a4ff 0%, #5b7cff 50%, #7d59ff 100%);
-  --line: rgba(153, 176, 255, 0.14);
-  --panel: rgba(10, 15, 30, 0.7);
-  --panel-strong: rgba(14, 20, 40, 0.92);
+  --background: #ffffff;
+  --foreground: #111827;
+  --primary: #3b82f6;
+  --primary-strong: #2563eb;
+  --secondary: #10b981;
+  --secondary-strong: #059669;
+  --accent: #f59e0b;
+  --accent-strong: #d97706;
+  --muted: #f3f4f6;
+  --border: #e5e7eb;
+  --ink-soft: #4b5563;
+  --success: #059669;
+  --warning: #d97706;
+  --danger: #dc2626;
 }
 
 * {
@@ -34,36 +38,19 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 20% 0%, rgba(61, 92, 255, 0.2), transparent 22%),
-    radial-gradient(circle at 100% 20%, rgba(133, 63, 255, 0.15), transparent 20%),
-    linear-gradient(180deg, #04060c 0%, #080d18 45%, #05060b 100%);
-}
-
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(rgba(150, 170, 255, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(150, 170, 255, 0.06) 1px, transparent 1px);
-  background-size: 42px 42px;
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.5), transparent 82%);
-}
-
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(circle at center, transparent 0 58%, rgba(0, 0, 0, 0.34) 100%);
-  mix-blend-mode: multiply;
+  background: #ffffff;
+  color: var(--foreground);
 }
 
 a {
   color: inherit;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
 #root {

@@ -32,6 +32,7 @@ export type InventoryItem = {
     fat?: number
     sugar?: number
     sodium?: number
+    novaGroup?: number
   }
 }
 
@@ -48,7 +49,9 @@ export type Recipe = {
   id: string
   title: string
   description: string
+  servings: number
   ingredients: string[]
+  steps: string[]
   dietaryTags: DietaryTag[]
   allergens: string[]
   cookTime: number
@@ -72,8 +75,24 @@ export type PlannedMeal = {
   score: number
 }
 
+export type AISuggestedMeal = {
+  day: string
+  title: string
+  summary: string
+  servings: number
+  cookTime: number
+  dietaryNotes: string[]
+  usesFromInventory: string[]
+  shoppingNeeded: string[]
+  ingredients: string[]
+  steps: string[]
+  nutritionFocus: string
+  whyItFits: string
+}
+
 export type ShoppingListItem = {
   name: string
+  zone: StorageZone
   neededFor: string[]
   priority: 'High' | 'Medium'
 }
@@ -83,6 +102,7 @@ export type AppState = {
   family: FamilyMember[]
   householdNeeds: DietaryTag[]
   cookedMeals: Record<string, boolean>
+  shoppingChecked: Record<string, boolean>
 }
 
 export type SupabasePantryStateRow = {
@@ -92,5 +112,6 @@ export type SupabasePantryStateRow = {
   family: FamilyMember[]
   household_needs: DietaryTag[]
   cooked_meals: Record<string, boolean>
+  shopping_checked: Record<string, boolean>
   updated_at?: string
 }
