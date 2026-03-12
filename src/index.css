@@ -5,18 +5,21 @@
     sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #3f4631;
+  color: #d8ddf0;
   background:
-    radial-gradient(circle at top, rgba(245, 183, 99, 0.18), transparent 30%),
-    linear-gradient(180deg, #f7f0e3 0%, #eef5e6 100%);
+    radial-gradient(circle at top, rgba(82, 127, 255, 0.14), transparent 24%),
+    linear-gradient(180deg, #070b16 0%, #090f1d 38%, #06070d 100%);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  --text: #4a513a;
-  --heading: #29301d;
-  --muted: #6f755f;
-  --action: #c6662c;
+  --text: #d8ddf0;
+  --heading: #f8fbff;
+  --muted: #8f98bb;
+  --action: linear-gradient(135deg, #84a4ff 0%, #5b7cff 50%, #7d59ff 100%);
+  --line: rgba(153, 176, 255, 0.14);
+  --panel: rgba(10, 15, 30, 0.7);
+  --panel-strong: rgba(14, 20, 40, 0.92);
 }
 
 * {
@@ -31,6 +34,10 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(61, 92, 255, 0.2), transparent 22%),
+    radial-gradient(circle at 100% 20%, rgba(133, 63, 255, 0.15), transparent 20%),
+    linear-gradient(180deg, #04060c 0%, #080d18 45%, #05060b 100%);
 }
 
 body::before {
@@ -39,10 +46,20 @@ body::before {
   inset: 0;
   pointer-events: none;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.12) 1px, transparent 1px);
-  background-size: 36px 36px;
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.28), transparent 75%);
+    linear-gradient(rgba(150, 170, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(150, 170, 255, 0.06) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.5), transparent 82%);
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at center, transparent 0 58%, rgba(0, 0, 0, 0.34) 100%);
+  mix-blend-mode: multiply;
 }
 
 a {

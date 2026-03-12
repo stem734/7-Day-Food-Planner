@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { FormEvent, PointerEvent as ReactPointerEvent } from 'react'
 import './App.css'
 import { dietaryOptions, emptyProductForm, storageZones } from './data'
 import { buildMealPlan, buildShoppingList, getRequiredTags, titleCase } from './lib/planner'
@@ -14,7 +14,7 @@ import {
   signUpWithPassword,
   supabase,
 } from './lib/supabase'
-import type { AppState, DietaryTag, DietProfile, InventoryItem, StorageZone } from './types'
+import type { AppState, DietaryTag, DietProfile, InventoryItem } from './types'
 
 type LookupState = 'idle' | 'loading' | 'error' | 'success'
 
@@ -44,6 +44,44 @@ function normalize(value: string) {
 
 function includesNormalized(haystack: string, needle: string) {
   return normalize(haystack).includes(normalize(needle))
+}
+
+function inferStorageZone(name: string, categories: string[]): AppState['inventory'][number]['zone'] {
+  const source = `${name} ${categories.join(' ')}`.toLowerCase()
+
+  if (
+    ['frozen', 'ice-cream', 'ice cream', 'freezer', 'frozen-foods'].some((term) =>
+      source.includes(term),
+    )
+  ) {
+    return 'Freezer'
+  }
+
+  if (
+    [
+      'milk',
+      'yogurt',
+      'yoghurt',
+      'cheese',
+      'butter',
+      'cream',
+      'eggs',
+      'fresh',
+      'chilled',
+      'juice',
+      'salad',
+      'fruit',
+      'vegetable',
+      'vegetables',
+      'meat',
+      'fish',
+      'ham',
+    ].some((term) => source.includes(term))
+  ) {
+    return 'Fridge'
+  }
+
+  return 'Cupboard'
 }
 
 function buildScannedItem(barcode: string, product: Record<string, unknown>): InventoryItem {
@@ -84,7 +122,10 @@ function buildScannedItem(barcode: string, product: Record<string, unknown>): In
     categories,
     quantity: 1,
     unit: 'pack',
-    zone: 'Cupboard',
+    zone: inferStorageZone(
+      String(product.product_name || product.product_name_en || 'Scanned product'),
+      categories,
+    ),
     expiresOn: '',
     barcode,
     source: 'barcode',
@@ -134,6 +175,8 @@ function App() {
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [remoteReady, setRemoteReady] = useState(false)
   const [isSavingRemote, setIsSavingRemote] = useState(false)
+  const [isFamilyModalOpen, setIsFamilyModalOpen] = useState(false)
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false)
   const [inventorySort, setInventorySort] = useState<{
     key:
       | 'name'
@@ -150,6 +193,7 @@ function App() {
   })
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
+  const appShellRef = useRef<HTMLDivElement | null>(null)
 
   const appState = useMemo(
     () => ({ inventory, family, householdNeeds, cookedMeals }),
@@ -348,7 +392,9 @@ function App() {
       const draft = await lookupBarcodeValue(barcode)
       setProductDraft(draft)
       setLookupState('success')
-      setLookupMessage(`Found ${draft.name}. Review the storage zone and quantity, then add it.`)
+      setLookupMessage(
+        `Found ${draft.name}. Suggested storage: ${draft.zone}. Confirm quantity, then add it.`,
+      )
     } catch {
       setLookupState('error')
       setLookupMessage('No matching product was found from Open Food Facts for that barcode.')
@@ -445,29 +491,6 @@ function App() {
     }))
   }
 
-  function handleManualAdd(event: FormEvent) {
-    event.preventDefault()
-    if (!manualItem.name.trim()) {
-      return
-    }
-
-    addInventoryItem({
-      id: `manual-${Date.now()}`,
-      name: titleCase(manualItem.name.trim()),
-      brand: '',
-      categories: [],
-      quantity: manualItem.quantity,
-      unit: manualItem.unit.trim(),
-      zone: manualItem.zone,
-      expiresOn: manualItem.expiresOn,
-      source: 'manual',
-      dietaryTags: [],
-      allergens: [],
-      health: {},
-    })
-    setManualItem(emptyProductForm)
-  }
-
   function handleDraftAdd() {
     if (!productDraft) {
       return
@@ -555,16 +578,39 @@ function App() {
     }
   }
 
+  function handlePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const element = appShellRef.current
+    if (!element) {
+      return
+    }
+
+    const bounds = element.getBoundingClientRect()
+    element.style.setProperty('--spotlight-x', `${event.clientX - bounds.left}px`)
+    element.style.setProperty('--spotlight-y', `${event.clientY - bounds.top}px`)
+  }
+
   return (
-    <div className="app-shell">
+    <div ref={appShellRef} className="app-shell" onPointerMove={handlePointerMove}>
+      <div className="ambient ambient-aurora ambient-aurora-1" aria-hidden="true" />
+      <div className="ambient ambient-aurora ambient-aurora-2" aria-hidden="true" />
+      <div className="ambient ambient-aurora ambient-aurora-3" aria-hidden="true" />
+      <div className="spotlight" aria-hidden="true" />
       <header className="hero">
         <div>
-          <p className="eyebrow">Food Planner</p>
-          <h1>Plan meals from what the family already has.</h1>
+          <p className="eyebrow">7 Day Food Planner</p>
+          <h1>7 Day Food Planner</h1>
           <p className="hero-copy">
             Track cupboard, fridge, and freezer items, scan barcodes, manage family food
             preferences, and build a seven-day plan with a shopping list.
           </p>
+          <div className="hero-actions">
+            <button type="button" className="secondary" onClick={() => setIsFamilyModalOpen(true)}>
+              Family
+            </button>
+            <button type="button" className="secondary" onClick={() => setIsSyncModalOpen(true)}>
+              Sync & Backup
+            </button>
+          </div>
         </div>
         <div className="hero-metrics">
           <article>
@@ -586,272 +632,94 @@ function App() {
         <section className="panel panel-wide">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">Cloud Sync</p>
-              <h2>Accounts, sync, and backup</h2>
+              <p className="eyebrow">Inventory</p>
+              <h2>Kitchen stock tables</h2>
             </div>
-            <div className="planner-summary">
-              <span>{isSupabaseEnabled ? 'Supabase configured' : 'Local-only mode'}</span>
+            <div className="inventory-panel-actions">
+              <input
+                value={barcode}
+                onChange={(event) => setBarcode(event.target.value)}
+                placeholder="Quick scan barcode"
+              />
+              <button type="button" onClick={() => void lookupBarcode()}>
+                Lookup item
+              </button>
+              <button type="button" className="secondary" onClick={() => void startScanner()}>
+                Scan item
+              </button>
             </div>
           </div>
-          <div className="auth-grid">
-            <div className="stack">
-              <p className={`status ${isSupabaseEnabled ? 'success' : 'loading'}`}>{authStatus}</p>
-              {userId ? (
-                <div className="draft-card">
-                  <h3>{userEmail ?? 'Signed-in user'}</h3>
-                  <p>{isSavingRemote ? 'Syncing latest changes...' : 'Cloud sync is active.'}</p>
-                  <button type="button" className="secondary" onClick={() => void handleSignOut()}>
-                    Sign out
-                  </button>
+          <p className={`status ${lookupState}`}>{lookupMessage}</p>
+          {isScannerOpen ? (
+            <div className="scanner scanner-inline">
+              <video ref={videoRef} muted playsInline />
+              <p>{scannerMessage}</p>
+              <button type="button" className="secondary" onClick={stopScanner}>
+                Close camera
+              </button>
+            </div>
+          ) : null}
+          {productDraft ? (
+            <div className="draft-card main-draft-card">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">Scanned Item</p>
+                  <h3>{productDraft.name}</h3>
                 </div>
-              ) : (
-                <form className="stack" onSubmit={handleAuthSubmit}>
-                  <div className="tab-row">
-                    <button
-                      type="button"
-                      className={authMode === 'signin' ? 'chip active' : 'chip'}
-                      onClick={() => setAuthMode('signin')}
-                    >
-                      Sign in
-                    </button>
-                    <button
-                      type="button"
-                      className={authMode === 'signup' ? 'chip active' : 'chip'}
-                      onClick={() => setAuthMode('signup')}
-                    >
-                      Create account
-                    </button>
-                  </div>
-                  <label>
-                    Email
-                    <input
-                      type="email"
-                      value={authForm.email}
-                      onChange={(event) =>
-                        setAuthForm((current) => ({ ...current, email: event.target.value }))
-                      }
-                      placeholder="family@example.com"
-                    />
-                  </label>
-                  <label>
-                    Password
-                    <input
-                      type="password"
-                      value={authForm.password}
-                      onChange={(event) =>
-                        setAuthForm((current) => ({ ...current, password: event.target.value }))
-                      }
-                      placeholder="Choose a strong password"
-                    />
-                  </label>
-                  <button type="submit" disabled={!isSupabaseEnabled}>
-                    {authMode === 'signin' ? 'Sign in and sync' : 'Create synced account'}
-                  </button>
-                </form>
-              )}
-            </div>
-            <div className="stack note-card">
-              <p className="section-label">Steps</p>
-              <ol className="steps-list">
-                <li>Create a Supabase project.</li>
-                <li>Copy `.env.example` to `.env` and add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.</li>
-                <li>Run `supabase-schema.sql` in the Supabase SQL editor.</li>
-                <li>Restart the app, create an account, and sign in.</li>
-                <li>Your planner data then syncs automatically after changes.</li>
-              </ol>
-              <p className="section-label">Backup</p>
-              <p>
-                Without Supabase, data lives only in this browser. With Supabase enabled, your
-                inventory, family members, and cooked meal status are backed up to the cloud for
-                that signed-in account.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section className="panel panel-wide">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Family</p>
-              <h2>Family members and food preferences</h2>
-            </div>
-          </div>
-          <div className="stack">
-            <div>
-              <p className="section-label">Household-wide requirements</p>
-              <div className="chip-grid">
-                {dietaryOptions
-                  .filter((option) => !['Vegetarian', 'Vegan', 'Pescatarian'].includes(option))
-                  .map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      className={householdNeeds.includes(option) ? 'chip active' : 'chip'}
-                      onClick={() =>
-                        setHouseholdNeeds((current) => toggleSelection(current, option))
-                      }
-                    >
-                      {option}
-                    </button>
-                  ))}
+                <span className="badge">{productDraft.zone}</span>
               </div>
-            </div>
-            <div className="member-editor-list">
-              {family.map((member) => (
-                <article key={member.id} className="member-card">
-                  <div className="member-top-row">
-                    <input
-                      value={member.name}
-                      onChange={(event) =>
-                        updateFamilyMember(member.id, (current) => ({
-                          ...current,
-                          name: event.target.value,
-                        }))
-                      }
-                    />
-                    <select
-                      value={member.dietProfile}
-                      onChange={(event) =>
-                        updateFamilyMember(member.id, (current) => ({
-                          ...current,
-                          dietProfile: event.target.value as DietProfile,
-                          eatsFish:
-                            event.target.value === 'Vegetarian' ? current.eatsFish : false,
-                        }))
-                      }
-                    >
-                      {dietProfiles.map((profile) => (
-                        <option key={profile} value={profile}>
-                          {profile}
-                        </option>
-                      ))}
-                    </select>
-                    <label className="checkbox-inline">
-                      <input
-                        type="checkbox"
-                        checked={member.eatsFish}
-                        disabled={member.dietProfile !== 'Vegetarian'}
-                        onChange={(event) =>
-                          updateFamilyMember(member.id, (current) => ({
-                            ...current,
-                            eatsFish: event.target.checked,
-                          }))
-                        }
-                      />
-                      Eats fish
-                    </label>
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => removeFamilyMember(member.id)}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                  <div className="chip-grid">
-                    {dietaryOptions
-                      .filter((option) => !['Vegetarian', 'Vegan', 'Pescatarian'].includes(option))
-                      .map((option) => (
-                        <button
-                          key={option}
-                          type="button"
-                          className={member.dietaryNeeds.includes(option) ? 'chip active' : 'chip'}
-                          onClick={() =>
-                            updateFamilyMember(member.id, (current) => ({
-                              ...current,
-                              dietaryNeeds: toggleSelection(current.dietaryNeeds, option),
-                            }))
-                          }
-                        >
-                          {option}
-                        </button>
-                      ))}
-                  </div>
-                  <label>
-                    Avoid ingredients or allergens
-                    <input
-                      value={member.avoidIngredients}
-                      onChange={(event) =>
-                        updateFamilyMember(member.id, (current) => ({
-                          ...current,
-                          avoidIngredients: event.target.value,
-                        }))
-                      }
-                      placeholder="sesame, shellfish"
-                    />
-                  </label>
-                </article>
-              ))}
-            </div>
-            <form className="stack add-member-form" onSubmit={handleAddFamilyMember}>
+              <p>
+                Barcode {productDraft.barcode} · Brand {productDraft.brand || 'Unknown'} ·{' '}
+                {productDraft.health.calories ?? 'n/a'} kcal per 100g
+              </p>
               <div className="inline-fields">
                 <label>
-                  New member
+                  How many in stock?
                   <input
-                    value={memberForm.name}
+                    type="number"
+                    min="1"
+                    value={productDraft.quantity}
                     onChange={(event) =>
-                      setMemberForm((current) => ({ ...current, name: event.target.value }))
+                      setProductDraft((current) =>
+                        current ? { ...current, quantity: Number(event.target.value) } : current,
+                      )
                     }
-                    placeholder="Member 4"
                   />
                 </label>
                 <label>
-                  Diet
-                  <select
-                    value={memberForm.dietProfile}
+                  Unit
+                  <input
+                    value={productDraft.unit}
                     onChange={(event) =>
-                      setMemberForm((current) => ({
-                        ...current,
-                        dietProfile: event.target.value as DietProfile,
-                        eatsFish:
-                          event.target.value === 'Vegetarian' ? current.eatsFish : false,
-                      }))
+                      setProductDraft((current) =>
+                        current ? { ...current, unit: event.target.value } : current,
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  Suggested section
+                  <select
+                    value={productDraft.zone}
+                    onChange={(event) =>
+                      setProductDraft((current) =>
+                        current ? { ...current, zone: event.target.value as InventoryItem['zone'] } : current,
+                      )
                     }
                   >
-                    {dietProfiles.map((profile) => (
-                      <option key={profile} value={profile}>
-                        {profile}
+                    {storageZones.map((zone) => (
+                      <option key={zone} value={zone}>
+                        {zone}
                       </option>
                     ))}
                   </select>
                 </label>
-                <label className="checkbox-inline">
-                  <input
-                    type="checkbox"
-                    checked={memberForm.eatsFish}
-                    disabled={memberForm.dietProfile !== 'Vegetarian'}
-                    onChange={(event) =>
-                      setMemberForm((current) => ({ ...current, eatsFish: event.target.checked }))
-                    }
-                  />
-                  Eats fish
-                </label>
               </div>
-              <label>
-                Avoid ingredients or allergens
-                <input
-                  value={memberForm.avoidIngredients}
-                  onChange={(event) =>
-                    setMemberForm((current) => ({
-                      ...current,
-                      avoidIngredients: event.target.value,
-                    }))
-                  }
-                  placeholder="peanuts, sesame"
-                />
-              </label>
-              <button type="submit">Add family member</button>
-            </form>
-          </div>
-        </section>
-
-        <section className="panel panel-wide">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Inventory</p>
-              <h2>Kitchen stock tables</h2>
+              <button type="button" onClick={handleDraftAdd}>
+                Add to {productDraft.zone}
+              </button>
             </div>
-          </div>
+          ) : null}
           <div className="inventory-sections">
             {inventoryByZone.map(({ zone, items }) => (
               <details key={zone} className="inventory-section">
@@ -862,6 +730,160 @@ function App() {
                   </div>
                 </summary>
                 <div className="inventory-table-wrap">
+                  <div className="storage-tools">
+                    <form
+                      className="storage-manual-form"
+                      onSubmit={(event) => {
+                        event.preventDefault()
+                        setManualItem((current) => ({ ...current, zone }))
+                        if (!manualItem.name.trim()) {
+                          return
+                        }
+
+                        addInventoryItem({
+                          id: `manual-${Date.now()}`,
+                          name: titleCase(manualItem.name.trim()),
+                          brand: '',
+                          categories: [],
+                          quantity: manualItem.quantity,
+                          unit: manualItem.unit.trim(),
+                          zone,
+                          expiresOn: manualItem.expiresOn,
+                          source: 'manual',
+                          dietaryTags: [],
+                          allergens: [],
+                          health: {},
+                        })
+                        setManualItem(emptyProductForm)
+                      }}
+                    >
+                      <input
+                        value={manualItem.zone === zone ? manualItem.name : ''}
+                        onChange={(event) =>
+                          setManualItem((current) => ({
+                            ...current,
+                            zone,
+                            name: event.target.value,
+                          }))
+                        }
+                        placeholder={`Add to ${zone}`}
+                      />
+                      <input
+                        type="number"
+                        min="1"
+                        value={manualItem.zone === zone ? manualItem.quantity : 1}
+                        onChange={(event) =>
+                          setManualItem((current) => ({
+                            ...current,
+                            zone,
+                            quantity: Number(event.target.value),
+                          }))
+                        }
+                        placeholder="Qty"
+                      />
+                      <input
+                        value={manualItem.zone === zone ? manualItem.unit : 'pack'}
+                        onChange={(event) =>
+                          setManualItem((current) => ({
+                            ...current,
+                            zone,
+                            unit: event.target.value,
+                          }))
+                        }
+                        placeholder="Unit"
+                      />
+                      <input
+                        type="date"
+                        value={manualItem.zone === zone ? manualItem.expiresOn : ''}
+                        onChange={(event) =>
+                          setManualItem((current) => ({
+                            ...current,
+                            zone,
+                            expiresOn: event.target.value,
+                          }))
+                        }
+                      />
+                      <button type="submit">Add</button>
+                    </form>
+
+                    <div className="storage-scan-tools">
+                      <input
+                        value={barcode}
+                        onChange={(event) => {
+                          setBarcode(event.target.value)
+                          setProductDraft((current) =>
+                            current ? { ...current, zone } : current,
+                          )
+                        }}
+                        placeholder={`Barcode for ${zone}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await lookupBarcode()
+                          setProductDraft((current) => (current ? { ...current, zone } : current))
+                        }}
+                      >
+                        Lookup
+                      </button>
+                      <button type="button" className="secondary" onClick={() => void startScanner()}>
+                        Scan
+                      </button>
+                    </div>
+
+                    {productDraft && productDraft.zone === zone ? (
+                      <div className="draft-card storage-draft-card">
+                        <div>
+                          <h3>{productDraft.name}</h3>
+                          <p>
+                            Barcode {productDraft.barcode} · {productDraft.health.calories ?? 'n/a'} kcal
+                            per 100g
+                          </p>
+                        </div>
+                        <div className="inline-fields">
+                          <label>
+                            How many in stock?
+                            <input
+                              type="number"
+                              min="1"
+                              value={productDraft.quantity}
+                              onChange={(event) =>
+                                setProductDraft((current) =>
+                                  current
+                                    ? { ...current, quantity: Number(event.target.value), zone }
+                                    : current,
+                                )
+                              }
+                            />
+                          </label>
+                          <label>
+                            Unit
+                            <input
+                              value={productDraft.unit}
+                              onChange={(event) =>
+                                setProductDraft((current) =>
+                                  current ? { ...current, unit: event.target.value, zone } : current,
+                                )
+                              }
+                            />
+                          </label>
+                        </div>
+                        <button type="button" onClick={handleDraftAdd}>
+                          Add scanned item
+                        </button>
+                      </div>
+                    ) : null}
+                    {isScannerOpen && productDraft?.zone === zone ? (
+                      <div className="scanner">
+                        <video ref={videoRef} muted playsInline />
+                        <p>{scannerMessage}</p>
+                        <button type="button" className="secondary" onClick={stopScanner}>
+                          Close camera
+                        </button>
+                      </div>
+                    ) : null}
+                    <p className={`status ${lookupState}`}>{lookupMessage}</p>
+                  </div>
                   <table className="inventory-table">
                     <thead>
                       <tr>
@@ -1046,205 +1068,6 @@ function App() {
           </div>
         </section>
 
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Add items</p>
-              <h2>Manual inventory entry</h2>
-            </div>
-          </div>
-          <form className="stack" onSubmit={handleManualAdd}>
-            <label>
-              Item name
-              <input
-                value={manualItem.name}
-                onChange={(event) =>
-                  setManualItem((current) => ({ ...current, name: event.target.value }))
-                }
-                placeholder="Brown rice"
-              />
-            </label>
-            <div className="inline-fields">
-              <label>
-                Quantity
-                <input
-                  type="number"
-                  min="1"
-                  value={manualItem.quantity}
-                  onChange={(event) =>
-                    setManualItem((current) => ({
-                      ...current,
-                      quantity: Number(event.target.value),
-                    }))
-                  }
-                />
-              </label>
-              <label>
-                Unit
-                <input
-                  value={manualItem.unit}
-                  onChange={(event) =>
-                    setManualItem((current) => ({ ...current, unit: event.target.value }))
-                  }
-                  placeholder="bag"
-                />
-              </label>
-            </div>
-            <div className="inline-fields">
-              <label>
-                Storage zone
-                <select
-                  value={manualItem.zone}
-                  onChange={(event) =>
-                    setManualItem((current) => ({
-                      ...current,
-                      zone: event.target.value as StorageZone,
-                    }))
-                  }
-                >
-                  {storageZones.map((zone) => (
-                    <option key={zone} value={zone}>
-                      {zone}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Use by
-                <input
-                  type="date"
-                  value={manualItem.expiresOn}
-                  onChange={(event) =>
-                    setManualItem((current) => ({ ...current, expiresOn: event.target.value }))
-                  }
-                />
-              </label>
-            </div>
-            <button type="submit">Add item</button>
-          </form>
-        </section>
-
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Barcode</p>
-              <h2>Scan with Open Food Facts</h2>
-            </div>
-          </div>
-          <div className="stack">
-            <label>
-              Barcode number
-              <input
-                value={barcode}
-                onChange={(event) => setBarcode(event.target.value)}
-                placeholder="5000112548167"
-              />
-            </label>
-            <div className="button-row">
-              <button type="button" onClick={() => void lookupBarcode()}>
-                Lookup product
-              </button>
-              <button type="button" className="secondary" onClick={() => void startScanner()}>
-                Open camera
-              </button>
-            </div>
-            <p className={`status ${lookupState}`}>{lookupMessage}</p>
-            {isScannerOpen ? (
-              <div className="scanner">
-                <video ref={videoRef} muted playsInline />
-                <p>{scannerMessage}</p>
-                <button type="button" className="secondary" onClick={stopScanner}>
-                  Close camera
-                </button>
-              </div>
-            ) : null}
-            {productDraft ? (
-              <div className="draft-card">
-                <div>
-                  <h3>{productDraft.name}</h3>
-                  <p>
-                    Barcode {productDraft.barcode} · {productDraft.health.calories ?? 'n/a'} kcal
-                    per 100g
-                  </p>
-                </div>
-                <div className="inline-fields">
-                  <label>
-                    Storage
-                    <select
-                      value={productDraft.zone}
-                      onChange={(event) =>
-                        setProductDraft((current) =>
-                          current
-                            ? { ...current, zone: event.target.value as StorageZone }
-                            : current,
-                        )
-                      }
-                    >
-                      {storageZones.map((zone) => (
-                        <option key={zone} value={zone}>
-                          {zone}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Quantity
-                    <input
-                      type="number"
-                      min="1"
-                      value={productDraft.quantity}
-                      onChange={(event) =>
-                        setProductDraft((current) =>
-                          current ? { ...current, quantity: Number(event.target.value) } : current,
-                        )
-                      }
-                    />
-                  </label>
-                </div>
-                <button type="button" onClick={handleDraftAdd}>
-                  Add scanned item
-                </button>
-              </div>
-            ) : null}
-          </div>
-        </section>
-
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Shopping</p>
-              <h2>Generated shopping list</h2>
-            </div>
-          </div>
-          <div className="stack">
-            <p className="planner-summary">
-              Built from the missing ingredients across the seven-day plan.
-            </p>
-            <ul className="shopping-list">
-              {shoppingList.length ? (
-                shoppingList.map((item) => (
-                  <li key={item.name}>
-                    <div>
-                      <strong>{item.name}</strong>
-                      <p>Needed for {item.neededFor.join(', ')}</p>
-                    </div>
-                    <span className={`badge ${item.priority === 'High' ? 'priority-high' : ''}`}>
-                      {item.priority}
-                    </span>
-                  </li>
-                ))
-              ) : (
-                <li>
-                  <div>
-                    <strong>No shopping gaps right now</strong>
-                    <p>Your current inventory covers the selected recipes.</p>
-                  </div>
-                </li>
-              )}
-            </ul>
-          </div>
-        </section>
-
         <section className="panel panel-wide">
           <div className="panel-heading">
             <div>
@@ -1320,6 +1143,279 @@ function App() {
           </div>
         </section>
       </main>
+
+      {isFamilyModalOpen ? (
+        <div className="modal-backdrop" onClick={() => setIsFamilyModalOpen(false)}>
+          <section className="modal-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Family</p>
+                <h2>Family members and food preferences</h2>
+              </div>
+              <button type="button" className="secondary" onClick={() => setIsFamilyModalOpen(false)}>
+                Close
+              </button>
+            </div>
+            <div className="stack">
+              <div>
+                <p className="section-label">Household-wide requirements</p>
+                <div className="chip-grid">
+                  {dietaryOptions
+                    .filter((option) => !['Vegetarian', 'Vegan', 'Pescatarian'].includes(option))
+                    .map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        className={householdNeeds.includes(option) ? 'chip active' : 'chip'}
+                        onClick={() =>
+                          setHouseholdNeeds((current) => toggleSelection(current, option))
+                        }
+                      >
+                        {option}
+                      </button>
+                    ))}
+                </div>
+              </div>
+              <div className="member-editor-list">
+                {family.map((member) => (
+                  <article key={member.id} className="member-card">
+                    <div className="member-top-row">
+                      <input
+                        value={member.name}
+                        onChange={(event) =>
+                          updateFamilyMember(member.id, (current) => ({
+                            ...current,
+                            name: event.target.value,
+                          }))
+                        }
+                      />
+                      <select
+                        value={member.dietProfile}
+                        onChange={(event) =>
+                          updateFamilyMember(member.id, (current) => ({
+                            ...current,
+                            dietProfile: event.target.value as DietProfile,
+                            eatsFish:
+                              event.target.value === 'Vegetarian' ? current.eatsFish : false,
+                          }))
+                        }
+                      >
+                        {dietProfiles.map((profile) => (
+                          <option key={profile} value={profile}>
+                            {profile}
+                          </option>
+                        ))}
+                      </select>
+                      <label className="checkbox-inline">
+                        <input
+                          type="checkbox"
+                          checked={member.eatsFish}
+                          disabled={member.dietProfile !== 'Vegetarian'}
+                          onChange={(event) =>
+                            updateFamilyMember(member.id, (current) => ({
+                              ...current,
+                              eatsFish: event.target.checked,
+                            }))
+                          }
+                        />
+                        Eats fish
+                      </label>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => removeFamilyMember(member.id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <div className="chip-grid">
+                      {dietaryOptions
+                        .filter((option) => !['Vegetarian', 'Vegan', 'Pescatarian'].includes(option))
+                        .map((option) => (
+                          <button
+                            key={option}
+                            type="button"
+                            className={member.dietaryNeeds.includes(option) ? 'chip active' : 'chip'}
+                            onClick={() =>
+                              updateFamilyMember(member.id, (current) => ({
+                                ...current,
+                                dietaryNeeds: toggleSelection(current.dietaryNeeds, option),
+                              }))
+                            }
+                          >
+                            {option}
+                          </button>
+                        ))}
+                    </div>
+                    <label>
+                      Avoid ingredients or allergens
+                      <input
+                        value={member.avoidIngredients}
+                        onChange={(event) =>
+                          updateFamilyMember(member.id, (current) => ({
+                            ...current,
+                            avoidIngredients: event.target.value,
+                          }))
+                        }
+                        placeholder="sesame, shellfish"
+                      />
+                    </label>
+                  </article>
+                ))}
+              </div>
+              <form className="stack add-member-form" onSubmit={handleAddFamilyMember}>
+                <div className="inline-fields">
+                  <label>
+                    New member
+                    <input
+                      value={memberForm.name}
+                      onChange={(event) =>
+                        setMemberForm((current) => ({ ...current, name: event.target.value }))
+                      }
+                      placeholder="Member 4"
+                    />
+                  </label>
+                  <label>
+                    Diet
+                    <select
+                      value={memberForm.dietProfile}
+                      onChange={(event) =>
+                        setMemberForm((current) => ({
+                          ...current,
+                          dietProfile: event.target.value as DietProfile,
+                          eatsFish:
+                            event.target.value === 'Vegetarian' ? current.eatsFish : false,
+                        }))
+                      }
+                    >
+                      {dietProfiles.map((profile) => (
+                        <option key={profile} value={profile}>
+                          {profile}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="checkbox-inline">
+                    <input
+                      type="checkbox"
+                      checked={memberForm.eatsFish}
+                      disabled={memberForm.dietProfile !== 'Vegetarian'}
+                      onChange={(event) =>
+                        setMemberForm((current) => ({ ...current, eatsFish: event.target.checked }))
+                      }
+                    />
+                    Eats fish
+                  </label>
+                </div>
+                <label>
+                  Avoid ingredients or allergens
+                  <input
+                    value={memberForm.avoidIngredients}
+                    onChange={(event) =>
+                      setMemberForm((current) => ({
+                        ...current,
+                        avoidIngredients: event.target.value,
+                      }))
+                    }
+                    placeholder="peanuts, sesame"
+                  />
+                </label>
+                <button type="submit">Add family member</button>
+              </form>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {isSyncModalOpen ? (
+        <div className="modal-backdrop" onClick={() => setIsSyncModalOpen(false)}>
+          <section className="modal-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Cloud Sync</p>
+                <h2>Accounts, sync, and backup</h2>
+              </div>
+              <button type="button" className="secondary" onClick={() => setIsSyncModalOpen(false)}>
+                Close
+              </button>
+            </div>
+            <div className="auth-grid">
+              <div className="stack">
+                <p className={`status ${isSupabaseEnabled ? 'success' : 'loading'}`}>{authStatus}</p>
+                {userId ? (
+                  <div className="draft-card">
+                    <h3>{userEmail ?? 'Signed-in user'}</h3>
+                    <p>{isSavingRemote ? 'Syncing latest changes...' : 'Cloud sync is active.'}</p>
+                    <button type="button" className="secondary" onClick={() => void handleSignOut()}>
+                      Sign out
+                    </button>
+                  </div>
+                ) : (
+                  <form className="stack" onSubmit={handleAuthSubmit}>
+                    <div className="tab-row">
+                      <button
+                        type="button"
+                        className={authMode === 'signin' ? 'chip active' : 'chip'}
+                        onClick={() => setAuthMode('signin')}
+                      >
+                        Sign in
+                      </button>
+                      <button
+                        type="button"
+                        className={authMode === 'signup' ? 'chip active' : 'chip'}
+                        onClick={() => setAuthMode('signup')}
+                      >
+                        Create account
+                      </button>
+                    </div>
+                    <label>
+                      Email
+                      <input
+                        type="email"
+                        value={authForm.email}
+                        onChange={(event) =>
+                          setAuthForm((current) => ({ ...current, email: event.target.value }))
+                        }
+                        placeholder="family@example.com"
+                      />
+                    </label>
+                    <label>
+                      Password
+                      <input
+                        type="password"
+                        value={authForm.password}
+                        onChange={(event) =>
+                          setAuthForm((current) => ({ ...current, password: event.target.value }))
+                        }
+                        placeholder="Choose a strong password"
+                      />
+                    </label>
+                    <button type="submit" disabled={!isSupabaseEnabled}>
+                      {authMode === 'signin' ? 'Sign in and sync' : 'Create synced account'}
+                    </button>
+                  </form>
+                )}
+              </div>
+              <div className="stack note-card">
+                <p className="section-label">Steps</p>
+                <ol className="steps-list">
+                  <li>Create a Supabase project.</li>
+                  <li>Copy `.env.example` to `.env` and add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.</li>
+                  <li>Run `supabase-schema.sql` in the Supabase SQL editor.</li>
+                  <li>Restart the app, create an account, and sign in.</li>
+                  <li>Your planner data then syncs automatically after changes.</li>
+                </ol>
+                <p className="section-label">Backup</p>
+                <p>
+                  Without Supabase, data lives only in this browser. With Supabase enabled, your
+                  inventory, family members, and cooked meal status are backed up to the cloud for
+                  that signed-in account.
+                </p>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   )
 }
