@@ -145,13 +145,8 @@
   min-width: 420px;
 }
 
-.inventory-heading-block {
-  max-width: 34rem;
-}
-
-.inventory-intro {
-  margin-top: 8px;
-  color: var(--ink-soft);
+.inventory-toolbar {
+  justify-content: flex-start;
 }
 
 .inventory-panel-actions input {
@@ -987,6 +982,61 @@ button.secondary:hover,
 
   .member-top-row {
     align-items: stretch;
+  }
+
+  .member-card-header,
+  .member-section-grid {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .member-card-header {
+    align-items: stretch;
+  }
+
+  .member-checkbox-row {
+    padding-bottom: 0;
+  }
+
+  .inventory-table {
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .inventory-table th,
+  .inventory-table td {
+    padding: 8px;
+  }
+
+  .inventory-table th {
+    font-size: 0.68rem;
+    letter-spacing: 0.05em;
+  }
+
+  .inventory-table td input {
+    min-width: 0;
+    padding: 8px 10px;
+    font-size: 0.92rem;
+  }
+
+  .quantity-field,
+  .row-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .quantity-field input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .compact-button,
+  .danger-icon-button {
+    width: 100%;
+  }
+
+  .inventory-detail-grid {
+    grid-template-columns: 1fr;
   }
 
   .modal-backdrop {

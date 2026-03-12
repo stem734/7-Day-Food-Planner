@@ -574,7 +574,26 @@ function App() {
         }),
       })
 
-      const data = (await response.json()) as { meals?: AISuggestedMeal[]; error?: string }
+      const rawBody = await response.text()
+      if (!rawBody.trim()) {
+        throw new Error(
+          response.ok
+            ? 'The OpenAI suggestions endpoint returned an empty response.'
+            : `The OpenAI suggestions endpoint failed with status ${response.status}.`,
+        )
+      }
+
+      let data: { meals?: AISuggestedMeal[]; error?: string }
+
+      try {
+        data = JSON.parse(rawBody) as { meals?: AISuggestedMeal[]; error?: string }
+      } catch {
+        throw new Error(
+          response.ok
+            ? 'The OpenAI suggestions endpoint returned invalid JSON.'
+            : `The OpenAI suggestions endpoint failed with status ${response.status}.`,
+        )
+      }
 
       if (!response.ok || !data.meals) {
         throw new Error(
@@ -899,15 +918,7 @@ function App() {
 
       <main className="dashboard">
         <section className="panel panel-wide">
-          <div className="panel-heading">
-            <div className="inventory-heading-block">
-              <p className="eyebrow">Inventory</p>
-              <h2>Kitchen stock tables</h2>
-              <p className="inventory-intro">
-                Organize everything by storage area, add items in place, and scan new products
-                directly into the right section.
-              </p>
-            </div>
+          <div className="panel-heading inventory-toolbar">
             <div className="inventory-panel-actions">
               <input
                 value={inventorySearch}
