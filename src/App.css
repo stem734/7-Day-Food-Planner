@@ -745,6 +745,26 @@ button.secondary:hover,
   white-space: nowrap;
 }
 
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.danger-icon-button {
+  min-width: 40px;
+  padding: 10px 0;
+  background: #fee2e2;
+  color: #991b1b;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.danger-icon-button:hover {
+  background: #fecaca;
+  color: #7f1d1d;
+}
+
 .inventory-detail-row td {
   padding-top: 0;
   background: #ffffff;

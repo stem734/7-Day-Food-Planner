@@ -680,6 +680,15 @@ function App() {
     setInventory((current) => current.filter((item) => item.zone !== zone))
   }
 
+  function removeInventoryItem(itemId: string) {
+    setInventory((current) => current.filter((item) => item.id !== itemId))
+    setOpenInventoryDetails((current) => {
+      const next = { ...current }
+      delete next[itemId]
+      return next
+    })
+  }
+
   function toggleSelection<T extends string>(current: T[], value: T) {
     return current.includes(value)
       ? current.filter((item) => item !== value)
@@ -1250,13 +1259,24 @@ function App() {
                                 />
                               </td>
                               <td>
-                                <button
-                                  type="button"
-                                  className="secondary compact-button"
-                                  onClick={() => toggleInventoryDetails(item.id)}
-                                >
-                                  {isOpen ? 'Hide details' : 'Details'}
-                                </button>
+                                <div className="row-actions">
+                                  <button
+                                    type="button"
+                                    className="secondary compact-button"
+                                    onClick={() => toggleInventoryDetails(item.id)}
+                                  >
+                                    {isOpen ? 'Hide details' : 'Details'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="danger-icon-button"
+                                    aria-label={`Delete ${item.name}`}
+                                    title={`Delete ${item.name}`}
+                                    onClick={() => removeInventoryItem(item.id)}
+                                  >
+                                    ×
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                             {isOpen ? (
