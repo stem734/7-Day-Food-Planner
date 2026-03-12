@@ -1123,17 +1123,15 @@ function App() {
                         Scan
                       </button>
                     </div>
-                    {zone === 'Cupboard' ? (
-                      <div className="storage-zone-actions">
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => clearZone('Cupboard')}
-                        >
-                          Clear Cupboard
-                        </button>
-                      </div>
-                    ) : null}
+                    <div className="storage-zone-actions">
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => clearZone(zone)}
+                      >
+                        Clear {zone}
+                      </button>
+                    </div>
 
                     {productDraft && productDraft.zone === zone ? (
                       <div className="draft-card storage-draft-card">
