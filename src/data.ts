@@ -1,10 +1,11 @@
-import type { AppState, DietaryTag, InventoryItem, Recipe, StorageZone } from './types'
+import type { AppState, DietaryTag, FamilyMember, InventoryItem, Recipe, StorageZone } from './types'
 
 export const STORAGE_KEY = 'seven-day-food-planner'
 
 export const dietaryOptions: DietaryTag[] = [
   'Vegetarian',
   'Vegan',
+  'Pescatarian',
   'Gluten-Free',
   'Dairy-Free',
   'Nut-Free',
@@ -71,16 +72,20 @@ const starterInventory: InventoryItem[] = [
   },
 ]
 
-const starterFamily = [
+const starterFamily: FamilyMember[] = [
   {
     id: 'f-1',
     name: 'Alex',
+    dietProfile: 'Vegan',
+    eatsFish: false,
     dietaryNeeds: ['Nut-Free'] as DietaryTag[],
     avoidIngredients: 'walnuts, peanuts',
   },
   {
     id: 'f-2',
     name: 'Sam',
+    dietProfile: 'Omnivore',
+    eatsFish: false,
     dietaryNeeds: ['High-Protein'] as DietaryTag[],
     avoidIngredients: '',
   },
@@ -90,6 +95,7 @@ export const defaultState: AppState = {
   inventory: starterInventory,
   family: starterFamily,
   householdNeeds: ['Nut-Free'],
+  cookedMeals: {},
 }
 
 export const recipeLibrary: Recipe[] = [
@@ -146,7 +152,7 @@ export const recipeLibrary: Recipe[] = [
     title: 'Salmon, Greens and New Potatoes',
     description: 'A lighter dinner with omega-3 rich salmon and green vegetables.',
     ingredients: ['salmon', 'potatoes', 'broccoli', 'peas', 'lemon'],
-    dietaryTags: ['Gluten-Free', 'High-Protein', 'Nut-Free'],
+    dietaryTags: ['Pescatarian', 'Gluten-Free', 'High-Protein', 'Nut-Free'],
     allergens: ['fish'],
     cookTime: 28,
     zoneFocus: ['Fridge', 'Freezer'],
@@ -170,7 +176,7 @@ export const recipeLibrary: Recipe[] = [
     title: 'Turkey Meatball Orzo Bake',
     description: 'Protein-forward baked orzo with meatballs, tomato, and spinach.',
     ingredients: ['turkey mince', 'orzo', 'tomatoes', 'spinach', 'mozzarella'],
-    dietaryTags: ['High-Protein', 'Nut-Free'],
+    dietaryTags: ['Nut-Free'],
     allergens: ['milk', 'gluten'],
     cookTime: 45,
     zoneFocus: ['Fridge', 'Cupboard'],

@@ -16,6 +16,7 @@ export function loadInitialState(): AppState {
       householdNeeds: parsed.householdNeeds?.length
         ? parsed.householdNeeds
         : defaultState.householdNeeds,
+      cookedMeals: parsed.cookedMeals ?? defaultState.cookedMeals,
     }
   } catch {
     return defaultState

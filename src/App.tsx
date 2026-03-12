@@ -14,7 +14,7 @@ import {
   signUpWithPassword,
   supabase,
 } from './lib/supabase'
-import type { AppState, DietaryTag, InventoryItem, StorageZone } from './types'
+import type { AppState, DietaryTag, DietProfile, InventoryItem, StorageZone } from './types'
 
 type LookupState = 'idle' | 'loading' | 'error' | 'success'
 
@@ -35,6 +35,8 @@ declare global {
     BarcodeDetector?: BarcodeDetectorConstructor
   }
 }
+
+const dietProfiles: DietProfile[] = ['Omnivore', 'Vegetarian', 'Vegan']
 
 function normalize(value: string) {
   return value.trim().toLowerCase()
@@ -58,6 +60,9 @@ function buildScannedItem(barcode: string, product: Record<string, unknown>): In
     }
     if (tag === 'Vegan') {
       return includesNormalized(categoryText, 'vegan')
+    }
+    if (tag === 'Pescatarian') {
+      return includesNormalized(categoryText, 'fish')
     }
     if (tag === 'Gluten-Free') {
       return includesNormalized(categoryText, 'gluten-free')
@@ -96,10 +101,13 @@ function App() {
   const [householdNeeds, setHouseholdNeeds] = useState<AppState['householdNeeds']>(
     initialState.householdNeeds,
   )
+  const [cookedMeals, setCookedMeals] = useState<AppState['cookedMeals']>(initialState.cookedMeals)
   const [manualItem, setManualItem] = useState(emptyProductForm)
   const [memberForm, setMemberForm] = useState({
     name: '',
-    dietaryNeeds: ['Nut-Free'] as DietaryTag[],
+    dietProfile: 'Omnivore' as DietProfile,
+    eatsFish: false,
+    dietaryNeeds: [] as DietaryTag[],
     avoidIngredients: '',
   })
   const [barcode, setBarcode] = useState('')
@@ -123,8 +131,8 @@ function App() {
   const mediaStreamRef = useRef<MediaStream | null>(null)
 
   const appState = useMemo(
-    () => ({ inventory, family, householdNeeds }),
-    [family, householdNeeds, inventory],
+    () => ({ inventory, family, householdNeeds, cookedMeals }),
+    [cookedMeals, family, householdNeeds, inventory],
   )
   const mealPlan = useMemo(
     () => buildMealPlan(inventory, family, householdNeeds),
@@ -208,6 +216,7 @@ function App() {
           setInventory(remoteState.inventory)
           setFamily(remoteState.family)
           setHouseholdNeeds(remoteState.householdNeeds)
+          setCookedMeals(remoteState.cookedMeals)
           setAuthStatus('Cloud sync is active.')
         } else {
           setAuthStatus('Cloud account ready. The first sync will upload this device state.')
@@ -413,11 +422,30 @@ function App() {
       {
         id: `member-${Date.now()}`,
         name: titleCase(memberForm.name.trim()),
+        dietProfile: memberForm.dietProfile,
+        eatsFish: memberForm.eatsFish,
         dietaryNeeds: memberForm.dietaryNeeds,
         avoidIngredients: memberForm.avoidIngredients,
       },
     ])
-    setMemberForm({ name: '', dietaryNeeds: ['Nut-Free'], avoidIngredients: '' })
+    setMemberForm({
+      name: '',
+      dietProfile: 'Omnivore',
+      eatsFish: false,
+      dietaryNeeds: [],
+      avoidIngredients: '',
+    })
+  }
+
+  function updateFamilyMember(
+    memberId: string,
+    updater: (member: AppState['family'][number]) => AppState['family'][number],
+  ) {
+    setFamily((current) => current.map((member) => (member.id === memberId ? updater(member) : member)))
+  }
+
+  function removeFamilyMember(memberId: string) {
+    setFamily((current) => current.filter((member) => member.id !== memberId))
   }
 
   function toggleSelection<T extends string>(current: T[], value: T) {
@@ -462,11 +490,11 @@ function App() {
     <div className="app-shell">
       <header className="hero">
         <div>
-          <p className="eyebrow">7 Day Food Planner</p>
-          <h1>Plan meals from your pantry, then sync the household plan.</h1>
+          <p className="eyebrow">Food Planner</p>
+          <h1>Plan meals from what the family already has.</h1>
           <p className="hero-copy">
-            Track cupboard, fridge, and freezer items, scan barcodes with Open Food Facts,
-            generate a seven-day meal plan, and turn recipe gaps into a shopping list.
+            Track cupboard, fridge, and freezer items, scan barcodes, manage family food
+            preferences, and build a seven-day plan with a shopping list.
           </p>
         </div>
         <div className="hero-metrics">
@@ -479,8 +507,8 @@ function App() {
             <p>Shopping items</p>
           </article>
           <article>
-            <span>{mealPlan.filter((meal) => meal.score > 0).length}</span>
-            <p>Planned meals</p>
+            <span>{mealPlan.filter((meal) => cookedMeals[meal.day]).length}</span>
+            <p>Cooked meals</p>
           </article>
         </div>
       </header>
@@ -490,7 +518,7 @@ function App() {
           <div className="panel-heading">
             <div>
               <p className="eyebrow">Cloud Sync</p>
-              <h2>Accounts and shared household state</h2>
+              <h2>Accounts, sync, and backup</h2>
             </div>
             <div className="planner-summary">
               <span>{isSupabaseEnabled ? 'Supabase configured' : 'Local-only mode'}</span>
@@ -502,9 +530,7 @@ function App() {
               {userId ? (
                 <div className="draft-card">
                   <h3>{userEmail ?? 'Signed-in user'}</h3>
-                  <p>
-                    {isSavingRemote ? 'Syncing latest changes...' : 'Cloud sync is active for this household.'}
-                  </p>
+                  <p>{isSavingRemote ? 'Syncing latest changes...' : 'Cloud sync is active.'}</p>
                   <button type="button" className="secondary" onClick={() => void handleSignOut()}>
                     Sign out
                   </button>
@@ -556,15 +582,197 @@ function App() {
               )}
             </div>
             <div className="stack note-card">
-              <p className="section-label">Setup note</p>
+              <p className="section-label">Steps</p>
+              <ol className="steps-list">
+                <li>Create a Supabase project.</li>
+                <li>Copy `.env.example` to `.env` and add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.</li>
+                <li>Run `supabase-schema.sql` in the Supabase SQL editor.</li>
+                <li>Restart the app, create an account, and sign in.</li>
+                <li>Your planner data then syncs automatically after changes.</li>
+              </ol>
+              <p className="section-label">Backup</p>
               <p>
-                Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to enable cloud sign-in,
-                then create the `planner_state` table described in the README.
-              </p>
-              <p>
-                Until then, the planner still works locally in this browser with no backend required.
+                Without Supabase, data lives only in this browser. With Supabase enabled, your
+                inventory, family members, and cooked meal status are backed up to the cloud for
+                that signed-in account.
               </p>
             </div>
+          </div>
+        </section>
+
+        <section className="panel panel-wide">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Family</p>
+              <h2>Family members and food preferences</h2>
+            </div>
+          </div>
+          <div className="stack">
+            <div>
+              <p className="section-label">Household-wide requirements</p>
+              <div className="chip-grid">
+                {dietaryOptions
+                  .filter((option) => !['Vegetarian', 'Vegan', 'Pescatarian'].includes(option))
+                  .map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      className={householdNeeds.includes(option) ? 'chip active' : 'chip'}
+                      onClick={() =>
+                        setHouseholdNeeds((current) => toggleSelection(current, option))
+                      }
+                    >
+                      {option}
+                    </button>
+                  ))}
+              </div>
+            </div>
+            <div className="member-editor-list">
+              {family.map((member) => (
+                <article key={member.id} className="member-card">
+                  <div className="member-top-row">
+                    <input
+                      value={member.name}
+                      onChange={(event) =>
+                        updateFamilyMember(member.id, (current) => ({
+                          ...current,
+                          name: event.target.value,
+                        }))
+                      }
+                    />
+                    <select
+                      value={member.dietProfile}
+                      onChange={(event) =>
+                        updateFamilyMember(member.id, (current) => ({
+                          ...current,
+                          dietProfile: event.target.value as DietProfile,
+                          eatsFish:
+                            event.target.value === 'Vegetarian' ? current.eatsFish : false,
+                        }))
+                      }
+                    >
+                      {dietProfiles.map((profile) => (
+                        <option key={profile} value={profile}>
+                          {profile}
+                        </option>
+                      ))}
+                    </select>
+                    <label className="checkbox-inline">
+                      <input
+                        type="checkbox"
+                        checked={member.eatsFish}
+                        disabled={member.dietProfile !== 'Vegetarian'}
+                        onChange={(event) =>
+                          updateFamilyMember(member.id, (current) => ({
+                            ...current,
+                            eatsFish: event.target.checked,
+                          }))
+                        }
+                      />
+                      Eats fish
+                    </label>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => removeFamilyMember(member.id)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <div className="chip-grid">
+                    {dietaryOptions
+                      .filter((option) => !['Vegetarian', 'Vegan', 'Pescatarian'].includes(option))
+                      .map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          className={member.dietaryNeeds.includes(option) ? 'chip active' : 'chip'}
+                          onClick={() =>
+                            updateFamilyMember(member.id, (current) => ({
+                              ...current,
+                              dietaryNeeds: toggleSelection(current.dietaryNeeds, option),
+                            }))
+                          }
+                        >
+                          {option}
+                        </button>
+                      ))}
+                  </div>
+                  <label>
+                    Avoid ingredients or allergens
+                    <input
+                      value={member.avoidIngredients}
+                      onChange={(event) =>
+                        updateFamilyMember(member.id, (current) => ({
+                          ...current,
+                          avoidIngredients: event.target.value,
+                        }))
+                      }
+                      placeholder="sesame, shellfish"
+                    />
+                  </label>
+                </article>
+              ))}
+            </div>
+            <form className="stack add-member-form" onSubmit={handleAddFamilyMember}>
+              <div className="inline-fields">
+                <label>
+                  New member
+                  <input
+                    value={memberForm.name}
+                    onChange={(event) =>
+                      setMemberForm((current) => ({ ...current, name: event.target.value }))
+                    }
+                    placeholder="Member 4"
+                  />
+                </label>
+                <label>
+                  Diet
+                  <select
+                    value={memberForm.dietProfile}
+                    onChange={(event) =>
+                      setMemberForm((current) => ({
+                        ...current,
+                        dietProfile: event.target.value as DietProfile,
+                        eatsFish:
+                          event.target.value === 'Vegetarian' ? current.eatsFish : false,
+                      }))
+                    }
+                  >
+                    {dietProfiles.map((profile) => (
+                      <option key={profile} value={profile}>
+                        {profile}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="checkbox-inline">
+                  <input
+                    type="checkbox"
+                    checked={memberForm.eatsFish}
+                    disabled={memberForm.dietProfile !== 'Vegetarian'}
+                    onChange={(event) =>
+                      setMemberForm((current) => ({ ...current, eatsFish: event.target.checked }))
+                    }
+                  />
+                  Eats fish
+                </label>
+              </div>
+              <label>
+                Avoid ingredients or allergens
+                <input
+                  value={memberForm.avoidIngredients}
+                  onChange={(event) =>
+                    setMemberForm((current) => ({
+                      ...current,
+                      avoidIngredients: event.target.value,
+                    }))
+                  }
+                  placeholder="peanuts, sesame"
+                />
+              </label>
+              <button type="submit">Add family member</button>
+            </form>
           </div>
         </section>
 
@@ -767,98 +975,13 @@ function App() {
         <section className="panel">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">Family</p>
-              <h2>Dietary rules</h2>
-            </div>
-          </div>
-          <div className="stack">
-            <div>
-              <p className="section-label">Household-wide requirements</p>
-              <div className="chip-grid">
-                {dietaryOptions.map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    className={householdNeeds.includes(option) ? 'chip active' : 'chip'}
-                    onClick={() =>
-                      setHouseholdNeeds((current) => toggleSelection(current, option))
-                    }
-                  >
-                    {option}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <ul className="member-list">
-              {family.map((member) => (
-                <li key={member.id}>
-                  <strong>{member.name}</strong>
-                  <p>{member.dietaryNeeds.join(', ') || 'No fixed tags'}</p>
-                  <small>{member.avoidIngredients || 'No ingredient exclusions listed'}</small>
-                </li>
-              ))}
-            </ul>
-            <form className="stack" onSubmit={handleAddFamilyMember}>
-              <label>
-                Family member
-                <input
-                  value={memberForm.name}
-                  onChange={(event) =>
-                    setMemberForm((current) => ({ ...current, name: event.target.value }))
-                  }
-                  placeholder="Jamie"
-                />
-              </label>
-              <div>
-                <p className="section-label">Needs</p>
-                <div className="chip-grid">
-                  {dietaryOptions.map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      className={
-                        memberForm.dietaryNeeds.includes(option) ? 'chip active' : 'chip'
-                      }
-                      onClick={() =>
-                        setMemberForm((current) => ({
-                          ...current,
-                          dietaryNeeds: toggleSelection(current.dietaryNeeds, option),
-                        }))
-                      }
-                    >
-                      {option}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <label>
-                Avoid ingredients or allergens
-                <input
-                  value={memberForm.avoidIngredients}
-                  onChange={(event) =>
-                    setMemberForm((current) => ({
-                      ...current,
-                      avoidIngredients: event.target.value,
-                    }))
-                  }
-                  placeholder="shellfish, sesame"
-                />
-              </label>
-              <button type="submit">Add family member</button>
-            </form>
-          </div>
-        </section>
-
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
               <p className="eyebrow">Shopping</p>
               <h2>Generated shopping list</h2>
             </div>
           </div>
           <div className="stack">
             <p className="planner-summary">
-              Built directly from the missing ingredients across the seven-day plan.
+              Built from the missing ingredients across the seven-day plan.
             </p>
             <ul className="shopping-list">
               {shoppingList.length ? (
@@ -889,53 +1012,73 @@ function App() {
           <div className="panel-heading">
             <div>
               <p className="eyebrow">Planner</p>
-              <h2>Seven-day meal suggestions</h2>
+              <h2>Seven-day meal ideas</h2>
             </div>
             <div className="planner-summary">
               <span>Required tags: {requiredTags.join(', ') || 'None'}</span>
             </div>
           </div>
-          <div className="meal-grid">
+          <div className="meal-rows">
             {mealPlan.map((meal) => (
-              <article key={meal.day} className="meal-card">
-                <div className="meal-card-header">
-                  <p>{meal.day}</p>
-                  <span>{meal.recipe.cookTime ? `${meal.recipe.cookTime} min` : 'Add more items'}</span>
+              <details key={meal.day} className="meal-row">
+                <summary className="meal-row-summary">
+                  <label className="checkbox-inline" onClick={(event) => event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(cookedMeals[meal.day])}
+                      onChange={(event) =>
+                        setCookedMeals((current) => ({
+                          ...current,
+                          [meal.day]: event.target.checked,
+                        }))
+                      }
+                    />
+                    Cooked
+                  </label>
+                  <div className="meal-row-main">
+                    <strong>{meal.day}</strong>
+                    <span>{meal.recipe.title}</span>
+                  </div>
+                  <div className="meal-row-meta">
+                    <span>{meal.recipe.cookTime ? `${meal.recipe.cookTime} min` : 'Add more items'}</span>
+                    <span>{meal.missingIngredients.length} to buy</span>
+                  </div>
+                </summary>
+                <div className="meal-row-details">
+                  <p className="meal-description">{meal.recipe.description}</p>
+                  <div className="tag-row">
+                    {meal.recipe.dietaryTags.map((tag) => (
+                      <span key={tag} className="badge">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                  <dl className="nutrition-grid">
+                    <div>
+                      <dt>Calories</dt>
+                      <dd>{meal.recipe.nutrition.calories}</dd>
+                    </div>
+                    <div>
+                      <dt>Protein</dt>
+                      <dd>{meal.recipe.nutrition.protein}g</dd>
+                    </div>
+                    <div>
+                      <dt>Fibre</dt>
+                      <dd>{meal.recipe.nutrition.fiber}g</dd>
+                    </div>
+                    <div>
+                      <dt>Sodium</dt>
+                      <dd>{meal.recipe.nutrition.sodium}mg</dd>
+                    </div>
+                  </dl>
+                  <p className="section-label">Matched from inventory</p>
+                  <p>{meal.matchedIngredients.join(', ') || 'No exact matches yet'}</p>
+                  <p className="section-label">Still needed</p>
+                  <p>{meal.missingIngredients.join(', ') || 'Nothing else needed'}</p>
+                  <p className="section-label">Health notes</p>
+                  <p>{meal.recipe.healthHighlights.join(' · ')}</p>
                 </div>
-                <h3>{meal.recipe.title}</h3>
-                <p className="meal-description">{meal.recipe.description}</p>
-                <div className="tag-row">
-                  {meal.recipe.dietaryTags.map((tag) => (
-                    <span key={tag} className="badge">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-                <dl className="nutrition-grid">
-                  <div>
-                    <dt>Calories</dt>
-                    <dd>{meal.recipe.nutrition.calories}</dd>
-                  </div>
-                  <div>
-                    <dt>Protein</dt>
-                    <dd>{meal.recipe.nutrition.protein}g</dd>
-                  </div>
-                  <div>
-                    <dt>Fibre</dt>
-                    <dd>{meal.recipe.nutrition.fiber}g</dd>
-                  </div>
-                  <div>
-                    <dt>Sodium</dt>
-                    <dd>{meal.recipe.nutrition.sodium}mg</dd>
-                  </div>
-                </dl>
-                <p className="section-label">Matched from inventory</p>
-                <p>{meal.matchedIngredients.join(', ') || 'No exact matches yet'}</p>
-                <p className="section-label">Still needed</p>
-                <p>{meal.missingIngredients.join(', ') || 'Nothing else needed'}</p>
-                <p className="section-label">Health notes</p>
-                <p>{meal.recipe.healthHighlights.join(' · ')}</p>
-              </article>
+              </details>
             ))}
           </div>
         </section>

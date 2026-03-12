@@ -70,7 +70,7 @@ export async function loadRemoteState(userId: string) {
 
   const { data, error } = await supabase
     .from('planner_state')
-    .select('inventory, family, household_needs')
+    .select('inventory, family, household_needs, cooked_meals')
     .eq('user_id', userId)
     .maybeSingle<SupabasePantryStateRow>()
 
@@ -86,6 +86,7 @@ export async function loadRemoteState(userId: string) {
     inventory: data.inventory,
     family: data.family,
     householdNeeds: data.household_needs,
+    cookedMeals: data.cooked_meals ?? {},
   } as AppState
 }
 
@@ -99,6 +100,7 @@ export async function saveRemoteState(userId: string, state: AppState) {
     inventory: state.inventory,
     family: state.family,
     household_needs: state.householdNeeds,
+    cooked_meals: state.cookedMeals,
   }
 
   const { error } = await supabase.from('planner_state').upsert(payload, {

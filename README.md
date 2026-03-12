@@ -1,4 +1,4 @@
-# 7 Day Food Planner
+# Food Planner
 
 A React + TypeScript web app for tracking cupboard, fridge, and freezer items, capturing products by barcode, generating a seven-day meal plan, and turning missing ingredients into a shopping list.
 
@@ -27,19 +27,26 @@ npm run lint
 npm run build
 ```
 
-## Cloud sync setup
+## Cloud sync and backup
 
-1. Copy `.env.example` to `.env`.
-2. Add your Supabase project values:
+1. Create a Supabase project.
+2. Copy `.env.example` to `.env`.
+3. Add your Supabase project values:
 
 ```bash
 VITE_SUPABASE_URL=...
 VITE_SUPABASE_ANON_KEY=...
 ```
 
-3. Run the SQL in [supabase-schema.sql](/Users/steve/Downloads/7%20Day%20Food%20Planner/supabase-schema.sql) in the Supabase SQL editor.
+4. Run the SQL in [supabase-schema.sql](/Users/steve/Downloads/7%20Day%20Food%20Planner/supabase-schema.sql) in the Supabase SQL editor.
+5. Start the app, create an account, and sign in.
 
 This creates a `planner_state` table keyed by the authenticated user and applies row-level security so each user can access only their own planner data.
+
+Backup behavior:
+
+- Without Supabase, data is stored only in the current browser via local storage.
+- With Supabase enabled, inventory, family members, household requirements, and cooked meal status are backed up to the signed-in account.
 
 ## Notes
 

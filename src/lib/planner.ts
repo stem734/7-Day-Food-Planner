@@ -2,6 +2,7 @@ import { days, recipeLibrary } from '../data'
 import type {
   AppState,
   DietaryTag,
+  DietProfile,
   FamilyMember,
   InventoryItem,
   PlannedMeal,
@@ -32,9 +33,29 @@ export function getFamilyAvoidances(family: FamilyMember[]) {
     .filter(Boolean)
 }
 
+function profileToRequiredTag(profile: DietProfile, eatsFish: boolean): DietaryTag | null {
+  if (profile === 'Vegan') {
+    return 'Vegan'
+  }
+
+  if (profile === 'Vegetarian') {
+    return eatsFish ? 'Pescatarian' : 'Vegetarian'
+  }
+
+  return null
+}
+
 export function getRequiredTags(state: AppState) {
+  const profileTags = state.family
+    .map((member) => profileToRequiredTag(member.dietProfile, member.eatsFish))
+    .filter((tag): tag is DietaryTag => Boolean(tag))
+
   return Array.from(
-    new Set([...state.householdNeeds, ...state.family.flatMap((member) => member.dietaryNeeds)]),
+    new Set([
+      ...state.householdNeeds,
+      ...profileTags,
+      ...state.family.flatMap((member) => member.dietaryNeeds),
+    ]),
   )
 }
 
@@ -79,9 +100,12 @@ export function buildMealPlan(
   family: FamilyMember[],
   householdNeeds: DietaryTag[],
 ) {
-  const requiredTags = Array.from(
-    new Set([...householdNeeds, ...family.flatMap((member) => member.dietaryNeeds)]),
-  )
+  const requiredTags = getRequiredTags({
+    inventory,
+    family,
+    householdNeeds,
+    cookedMeals: {},
+  })
   const avoidances = getFamilyAvoidances(family)
   const inventoryNames = inventory.map((item) => normalize(item.name))
 

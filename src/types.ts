@@ -3,11 +3,14 @@ export type StorageZone = 'Cupboard' | 'Fridge' | 'Freezer'
 export type DietaryTag =
   | 'Vegetarian'
   | 'Vegan'
+  | 'Pescatarian'
   | 'Gluten-Free'
   | 'Dairy-Free'
   | 'Nut-Free'
   | 'High-Protein'
   | 'Low-Sodium'
+
+export type DietProfile = 'Omnivore' | 'Vegetarian' | 'Vegan'
 
 export type InventoryItem = {
   id: string
@@ -33,6 +36,8 @@ export type InventoryItem = {
 export type FamilyMember = {
   id: string
   name: string
+  dietProfile: DietProfile
+  eatsFish: boolean
   dietaryNeeds: DietaryTag[]
   avoidIngredients: string
 }
@@ -75,6 +80,7 @@ export type AppState = {
   inventory: InventoryItem[]
   family: FamilyMember[]
   householdNeeds: DietaryTag[]
+  cookedMeals: Record<string, boolean>
 }
 
 export type SupabasePantryStateRow = {
@@ -83,5 +89,6 @@ export type SupabasePantryStateRow = {
   inventory: InventoryItem[]
   family: FamilyMember[]
   household_needs: DietaryTag[]
+  cooked_meals: Record<string, boolean>
   updated_at?: string
 }

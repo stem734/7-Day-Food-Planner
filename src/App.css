@@ -66,7 +66,6 @@
 
 .panel-heading,
 .zone-card-header,
-.meal-card-header,
 .button-row,
 .inline-fields,
 .auth-grid,
@@ -75,8 +74,7 @@
   gap: 12px;
 }
 
-.panel-heading,
-.meal-card-header {
+.panel-heading {
   justify-content: space-between;
   align-items: flex-start;
 }
@@ -91,7 +89,8 @@
 }
 
 .zone-grid,
-.meal-grid {
+.meal-rows,
+.member-editor-list {
   display: grid;
   gap: 16px;
 }
@@ -100,14 +99,11 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.meal-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
 .zone-card,
 .draft-card,
 .scanner,
-.meal-card,
+.meal-row,
+.member-card,
 .note-card {
   border: 1px solid rgba(84, 88, 63, 0.12);
   border-radius: 20px;
@@ -116,7 +112,7 @@
 
 .zone-card,
 .draft-card,
-.meal-card {
+.member-card {
   padding: 18px;
 }
 
@@ -125,8 +121,7 @@
   gap: 14px;
 }
 
-.item-list,
-.member-list {
+.item-list {
   list-style: none;
   padding: 0;
   margin: 0;
@@ -134,8 +129,7 @@
   gap: 10px;
 }
 
-.item-list li,
-.member-list li {
+.item-list li {
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -143,14 +137,12 @@
   border-bottom: 1px solid rgba(84, 88, 63, 0.1);
 }
 
-.item-list li:last-child,
-.member-list li:last-child {
+.item-list li:last-child {
   border-bottom: 0;
 }
 
 .eyebrow,
-.section-label,
-.meal-card-header p {
+.section-label {
   margin: 0;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -192,6 +184,17 @@ label {
   gap: 8px;
   font-size: 0.94rem;
   color: var(--heading);
+}
+
+.checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.checkbox-inline input {
+  width: auto;
+  margin: 0;
 }
 
 input,
@@ -305,9 +308,68 @@ button.secondary {
   color: #2f6a35;
 }
 
-.meal-card {
+.member-card,
+.meal-row-details {
   display: grid;
   gap: 14px;
+}
+
+.member-top-row,
+.meal-row-summary,
+.meal-row-main,
+.meal-row-meta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.member-top-row {
+  flex-wrap: wrap;
+}
+
+.member-top-row input {
+  min-width: 180px;
+}
+
+.meal-row {
+  overflow: hidden;
+}
+
+.meal-row-summary {
+  list-style: none;
+  padding: 18px;
+  cursor: pointer;
+  justify-content: space-between;
+}
+
+.meal-row-summary::-webkit-details-marker {
+  display: none;
+}
+
+.meal-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.meal-row-main span {
+  color: var(--muted);
+}
+
+.meal-row-meta {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.meal-row-details {
+  padding: 0 18px 18px;
+  border-top: 1px solid rgba(84, 88, 63, 0.1);
+}
+
+.steps-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
 }
 
 .meal-description {
@@ -365,7 +427,7 @@ button.secondary {
   .hero,
   .dashboard,
   .zone-grid,
-  .meal-grid {
+  .meal-rows {
     grid-template-columns: 1fr;
   }
 
@@ -393,8 +455,15 @@ button.secondary {
   .hero-metrics,
   .inline-fields,
   .button-row,
-  .nutrition-grid {
+  .nutrition-grid,
+  .meal-row-summary,
+  .meal-row-main,
+  .meal-row-meta {
     grid-template-columns: 1fr;
     flex-direction: column;
+  }
+
+  .member-top-row {
+    align-items: stretch;
   }
 }

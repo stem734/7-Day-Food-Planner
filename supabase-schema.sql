@@ -4,6 +4,7 @@ create table if not exists public.planner_state (
   inventory jsonb not null default '[]'::jsonb,
   family jsonb not null default '[]'::jsonb,
   household_needs jsonb not null default '[]'::jsonb,
+  cooked_meals jsonb not null default '{}'::jsonb,
   updated_at timestamptz not null default timezone('utc', now())
 );
 
