@@ -1000,6 +1000,17 @@ button.secondary:hover,
     display: block;
   }
 
+  .inventory-row {
+    background: #ffffff;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .inventory-detail-row {
+    margin-top: -2px;
+  }
+
   .inventory-row td {
     display: grid;
     grid-template-columns: minmax(120px, 150px) 1fr;
@@ -1020,6 +1031,13 @@ button.secondary:hover,
 
   .inventory-row td:last-child {
     border-bottom: 0;
+  }
+
+  .inventory-detail-row td {
+    border: 2px solid var(--border);
+    border-top: 0;
+    border-radius: 0 0 8px 8px;
+    overflow: hidden;
   }
 
   .inventory-table td input {
