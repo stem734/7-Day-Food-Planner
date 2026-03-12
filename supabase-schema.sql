@@ -8,6 +8,7 @@ create table if not exists public.planner_state (
   cooked_meals jsonb not null default '{}'::jsonb,
   meal_cooking_for jsonb not null default '{}'::jsonb,
   meal_recipe_overrides jsonb not null default '{}'::jsonb,
+  meal_inventory_adjustments jsonb not null default '{}'::jsonb,
   shopping_checked jsonb not null default '{}'::jsonb,
   shopping_extras jsonb not null default '[]'::jsonb,
   purchase_history jsonb not null default '[]'::jsonb,

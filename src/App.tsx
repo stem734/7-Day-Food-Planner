@@ -249,6 +249,9 @@ function App() {
   const [mealRecipeOverrides, setMealRecipeOverrides] = useState<AppState['mealRecipeOverrides']>(
     initialState.mealRecipeOverrides,
   )
+  const [mealInventoryAdjustments, setMealInventoryAdjustments] = useState<AppState['mealInventoryAdjustments']>(
+    initialState.mealInventoryAdjustments,
+  )
   const [shoppingChecked, setShoppingChecked] = useState<AppState['shoppingChecked']>(
     initialState.shoppingChecked,
   )
@@ -259,6 +262,7 @@ function App() {
     initialState.purchaseHistory,
   )
   const [manualItem, setManualItem] = useState(emptyProductForm)
+  const [manualQuantityInput, setManualQuantityInput] = useState('1')
   const [memberForm, setMemberForm] = useState({
     name: '',
     dietProfile: 'Omnivore' as DietProfile,
@@ -270,6 +274,7 @@ function App() {
   const [lookupState, setLookupState] = useState<LookupState>('idle')
   const [lookupMessage, setLookupMessage] = useState('Ready to look up products from Open Food Facts.')
   const [productDraft, setProductDraft] = useState<InventoryItem | null>(null)
+  const [draftQuantityInput, setDraftQuantityInput] = useState('1')
   const [isScannerOpen, setIsScannerOpen] = useState(false)
   const [scannerZone, setScannerZone] = useState<'main' | InventoryItem['zone'] | null>(null)
   const [scannerMessage, setScannerMessage] = useState('Use your camera to detect an EAN/UPC barcode.')
@@ -324,6 +329,7 @@ function App() {
       cookedMeals,
       mealCookingFor,
       mealRecipeOverrides,
+      mealInventoryAdjustments,
       shoppingChecked,
       shoppingExtras,
       purchaseHistory,
@@ -336,6 +342,7 @@ function App() {
       inventory,
       mealCookingFor,
       mealRecipeOverrides,
+      mealInventoryAdjustments,
       purchaseHistory,
       shoppingChecked,
       shoppingExtras,
@@ -704,6 +711,7 @@ function App() {
           setCookedMeals(remoteState.cookedMeals)
           setMealCookingFor(remoteState.mealCookingFor)
           setMealRecipeOverrides(remoteState.mealRecipeOverrides)
+          setMealInventoryAdjustments(remoteState.mealInventoryAdjustments)
           setShoppingChecked(remoteState.shoppingChecked)
           setShoppingExtras(remoteState.shoppingExtras)
           setPurchaseHistory(remoteState.purchaseHistory)
@@ -824,6 +832,7 @@ function App() {
     try {
       const { draft, source } = await lookupBarcodeValue(barcode)
       setProductDraft(draft)
+      setDraftQuantityInput(String(draft.quantity))
       setLookupState('success')
       setLookupMessage(
         source === 'cache'
@@ -885,7 +894,9 @@ function App() {
 
             try {
               const { draft, source } = await lookupBarcodeValue(code)
-              setProductDraft(zone === 'main' ? draft : { ...draft, zone })
+              const nextDraft = zone === 'main' ? draft : { ...draft, zone }
+              setProductDraft(nextDraft)
+              setDraftQuantityInput(String(nextDraft.quantity))
               setLookupState('success')
               setLookupMessage(
                 source === 'cache'
@@ -991,9 +1002,12 @@ function App() {
     setCookedMeals({})
     setMealCookingFor({})
     setMealRecipeOverrides({})
+    setMealInventoryAdjustments({})
     setShoppingChecked({})
     setShoppingExtras([])
     setPurchaseHistory([])
+    setManualQuantityInput('1')
+    setDraftQuantityInput('1')
     setInventorySearch('')
     setBarcode('')
     setProductDraft(null)
@@ -1028,8 +1042,12 @@ function App() {
       return
     }
 
-    addInventoryItem(productDraft)
+    addInventoryItem({
+      ...productDraft,
+      quantity: Number(draftQuantityInput) || productDraft.quantity || 1,
+    })
     setProductDraft(null)
+    setDraftQuantityInput('1')
     setLookupMessage('Product added to inventory.')
     setLookupState('idle')
     setBarcode('')
@@ -1419,6 +1437,83 @@ function App() {
     })
   }
 
+  function toggleCookedMeal(meal: PlannedMeal, checked: boolean) {
+    if (checked) {
+      const usedItemIds = new Set<string>()
+      const consumedItems: InventoryItem[] = []
+
+      setInventory((current) =>
+        current
+          .map((item) => {
+            const shouldConsume = meal.matchedIngredients.some(
+              (ingredient) =>
+                !usedItemIds.has(item.id) && includesNormalized(normalize(item.name), ingredient),
+            )
+
+            if (!shouldConsume) {
+              return item
+            }
+
+            usedItemIds.add(item.id)
+            consumedItems.push({ ...item, quantity: 1 })
+
+            if (item.quantity > 1) {
+              return {
+                ...item,
+                quantity: item.quantity - 1,
+              }
+            }
+
+            return null
+          })
+          .filter((item): item is InventoryItem => item !== null),
+      )
+
+      setMealInventoryAdjustments((current) => ({
+        ...current,
+        [meal.day]: consumedItems,
+      }))
+      setCookedMeals((current) => ({
+        ...current,
+        [meal.day]: true,
+      }))
+      return
+    }
+
+    const consumedItems = mealInventoryAdjustments[meal.day] ?? []
+
+    if (consumedItems.length) {
+      setInventory((current) => {
+        const next = [...current]
+
+        consumedItems.forEach((consumedItem) => {
+          const existingIndex = next.findIndex((item) => item.id === consumedItem.id)
+          if (existingIndex >= 0) {
+            next[existingIndex] = {
+              ...next[existingIndex],
+              quantity: next[existingIndex].quantity + consumedItem.quantity,
+            }
+            return
+          }
+
+          next.unshift(consumedItem)
+        })
+
+        return next
+      })
+    }
+
+    setMealInventoryAdjustments((current) => {
+      const next = { ...current }
+      delete next[meal.day]
+      return next
+    })
+    setCookedMeals((current) => ({
+      ...current,
+      [meal.day]: false,
+    }))
+  }
+
   function inferShoppingZoneForItem(name: string): StorageZone {
     const source = normalize(name)
 
@@ -1569,14 +1664,6 @@ function App() {
                 onChange={(event) => setInventorySearch(event.target.value)}
                 placeholder="Search all kitchen stock"
               />
-              <input
-                value={barcode}
-                onChange={(event) => setBarcode(event.target.value)}
-                placeholder="Quick scan barcode"
-              />
-              <button type="button" onClick={() => void lookupBarcode()}>
-                Lookup item
-              </button>
               <button type="button" className="secondary" onClick={() => void startScanner('main')}>
                 Scan item
               </button>
@@ -1613,11 +1700,9 @@ function App() {
                     type="number"
                     min="1"
                     step="0.1"
-                    value={productDraft.quantity}
+                    value={draftQuantityInput}
                     onChange={(event) =>
-                      setProductDraft((current) =>
-                        current ? { ...current, quantity: Number(event.target.value) } : current,
-                      )
+                      setDraftQuantityInput(event.target.value)
                     }
                   />
                 </label>
@@ -1719,7 +1804,7 @@ function App() {
                           name: titleCase(manualItem.name.trim()),
                           brand: '',
                           categories: [],
-                          quantity: manualItem.quantity,
+                          quantity: Number(manualQuantityInput) || manualItem.quantity || 1,
                           remainingPercent: undefined,
                           unit: manualItem.unit.trim(),
                           zone,
@@ -1730,6 +1815,7 @@ function App() {
                           health: {},
                         })
                         setManualItem(emptyProductForm)
+                        setManualQuantityInput('1')
                       }}
                     >
                       <input
@@ -1747,14 +1833,17 @@ function App() {
                         type="number"
                         min="1"
                         step="0.1"
-                        value={manualItem.zone === zone ? manualItem.quantity : 1}
-                        onChange={(event) =>
-                          setManualItem((current) => ({
-                            ...current,
-                            zone,
-                            quantity: Number(event.target.value),
-                          }))
-                        }
+                        value={manualItem.zone === zone ? manualQuantityInput : '1'}
+                        onChange={(event) => {
+                          setManualQuantityInput(event.target.value)
+                          if (event.target.value) {
+                            setManualItem((current) => ({
+                              ...current,
+                              zone,
+                              quantity: Number(event.target.value) || current.quantity,
+                            }))
+                          }
+                        }}
                         placeholder="Amount"
                       />
                       <input
@@ -1832,14 +1921,8 @@ function App() {
                               type="number"
                               min="1"
                               step="0.1"
-                              value={productDraft.quantity}
-                              onChange={(event) =>
-                                setProductDraft((current) =>
-                                  current
-                                    ? { ...current, quantity: Number(event.target.value), zone }
-                                    : current,
-                                )
-                              }
+                              value={draftQuantityInput}
+                              onChange={(event) => setDraftQuantityInput(event.target.value)}
                             />
                           </label>
                           <label>
@@ -2230,28 +2313,24 @@ function App() {
                       setOpenMealDay((current) => (current === meal.day ? null : meal.day))
                     }
                   >
-                    <label className="checkbox-inline" onClick={(event) => event.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(cookedMeals[meal.day])}
-                        onChange={(event) =>
-                          setCookedMeals((current) => ({
-                            ...current,
-                            [meal.day]: event.target.checked,
-                          }))
-                        }
-                      />
-                      Cooked
-                    </label>
-                    <div className="meal-row-main">
-                      <strong>{meal.day}</strong>
-                      <span>{meal.recipe.title}</span>
-                    </div>
-                    <div className="meal-row-meta">
-                      <span>{meal.recipe.cookTime ? `${meal.recipe.cookTime} min` : 'Add more items'}</span>
-                      <span>Cooking for {cookingForLabel}</span>
-                      <span>{stillNeeded.length} to buy</span>
-                    </div>
+                  <label className="checkbox-inline" onClick={(event) => event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(cookedMeals[meal.day])}
+                      onChange={(event) => toggleCookedMeal(meal, event.target.checked)}
+                    />
+                    {cookedMeals[meal.day] ? 'Cooked' : 'Mark cooked'}
+                  </label>
+                  <div className="meal-row-main">
+                    <strong>{meal.day}</strong>
+                    <span>{meal.recipe.title}</span>
+                  </div>
+                  <div className="meal-row-meta">
+                    {cookedMeals[meal.day] ? <span className="meal-state-badge">Cooked</span> : null}
+                    <span>{meal.recipe.cookTime ? `${meal.recipe.cookTime} min` : 'Add more items'}</span>
+                    <span>Cooking for {cookingForLabel}</span>
+                    <span>{stillNeeded.length} to buy</span>
+                  </div>
                   </button>
                   {openMealDay === meal.day ? (
                 <div className="meal-row-details">

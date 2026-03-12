@@ -191,6 +191,7 @@ export function buildMealPlan(
     cookedMeals: {},
     mealCookingFor: {},
     mealRecipeOverrides: {},
+    mealInventoryAdjustments: {},
     shoppingChecked: {},
     shoppingExtras: [],
     purchaseHistory: [],

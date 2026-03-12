@@ -307,6 +307,7 @@ export const defaultState: AppState = {
   cookedMeals: {},
   mealCookingFor: {},
   mealRecipeOverrides: {},
+  mealInventoryAdjustments: {},
   shoppingChecked: {},
   shoppingExtras: [],
   purchaseHistory: [],

@@ -20,6 +20,8 @@ export function loadInitialState(): AppState {
       cookedMeals: parsed.cookedMeals ?? defaultState.cookedMeals,
       mealCookingFor: parsed.mealCookingFor ?? defaultState.mealCookingFor,
       mealRecipeOverrides: parsed.mealRecipeOverrides ?? defaultState.mealRecipeOverrides,
+      mealInventoryAdjustments:
+        parsed.mealInventoryAdjustments ?? defaultState.mealInventoryAdjustments,
       shoppingChecked: parsed.shoppingChecked ?? defaultState.shoppingChecked,
       shoppingExtras: parsed.shoppingExtras ?? defaultState.shoppingExtras,
       purchaseHistory: parsed.purchaseHistory ?? defaultState.purchaseHistory,

@@ -117,6 +117,7 @@ export type AppState = {
   cookedMeals: Record<string, boolean>
   mealCookingFor: Record<string, MealCookingFor>
   mealRecipeOverrides: Record<string, string>
+  mealInventoryAdjustments: Record<string, InventoryItem[]>
   shoppingChecked: Record<string, boolean>
   shoppingExtras: ShoppingListItem[]
   purchaseHistory: Array<{
@@ -147,6 +148,7 @@ export type SupabasePantryStateRow = {
   cooked_meals: Record<string, boolean>
   meal_cooking_for: Record<string, MealCookingFor>
   meal_recipe_overrides: Record<string, string>
+  meal_inventory_adjustments: Record<string, InventoryItem[]>
   shopping_checked: Record<string, boolean>
   shopping_extras: ShoppingListItem[]
   purchase_history: Array<{

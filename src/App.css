@@ -571,10 +571,12 @@ button.secondary:hover,
 
 .meal-row {
   background: #ffffff;
+  border-left: 4px solid transparent;
 }
 
 .meal-row-cooked {
-  background: #f3f4f6;
+  background: #ecfdf5;
+  border-left-color: #10b981;
 }
 
 .meal-row-summary {
@@ -606,16 +608,34 @@ button.secondary:hover,
 
 .meal-row-cooked .meal-row-summary:hover,
 .meal-row-cooked .meal-row-summary:active {
-  background: #eceff3;
+  background: #dcfce7;
 }
 
 .meal-row-cooked.meal-row-open .meal-row-summary {
-  background: #d1d5db;
+  background: #bbf7d0;
 }
 
 .meal-row-cooked.meal-row-open .meal-row-summary:hover,
 .meal-row-cooked.meal-row-open .meal-row-summary:active {
-  background: #c4cad3;
+  background: #86efac;
+}
+
+.meal-row-cooked .meal-row-main strong,
+.meal-row-cooked .meal-row-main span {
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+}
+
+.meal-state-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #10b981;
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .inventory-section-summary::-webkit-details-marker {

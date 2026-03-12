@@ -70,7 +70,7 @@ export async function loadRemoteState(userId: string) {
 
   const { data, error } = await supabase
     .from('planner_state')
-    .select('inventory, family, user_recipes, household_needs, cooked_meals, meal_cooking_for, meal_recipe_overrides, shopping_checked, shopping_extras, purchase_history')
+    .select('inventory, family, user_recipes, household_needs, cooked_meals, meal_cooking_for, meal_recipe_overrides, meal_inventory_adjustments, shopping_checked, shopping_extras, purchase_history')
     .eq('user_id', userId)
     .maybeSingle<SupabasePantryStateRow>()
 
@@ -90,6 +90,7 @@ export async function loadRemoteState(userId: string) {
     cookedMeals: data.cooked_meals ?? {},
     mealCookingFor: data.meal_cooking_for ?? {},
     mealRecipeOverrides: data.meal_recipe_overrides ?? {},
+    mealInventoryAdjustments: data.meal_inventory_adjustments ?? {},
     shoppingChecked: data.shopping_checked ?? {},
     shoppingExtras: data.shopping_extras ?? [],
     purchaseHistory: data.purchase_history ?? [],
@@ -110,6 +111,7 @@ export async function saveRemoteState(userId: string, state: AppState) {
     cooked_meals: state.cookedMeals,
     meal_cooking_for: state.mealCookingFor,
     meal_recipe_overrides: state.mealRecipeOverrides,
+    meal_inventory_adjustments: state.mealInventoryAdjustments,
     shopping_checked: state.shoppingChecked,
     shopping_extras: state.shoppingExtras,
     purchase_history: state.purchaseHistory,
