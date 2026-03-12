@@ -90,7 +90,8 @@
 
 .zone-grid,
 .meal-rows,
-.member-editor-list {
+.member-editor-list,
+.inventory-sections {
   display: grid;
   gap: 16px;
 }
@@ -104,7 +105,8 @@
 .scanner,
 .meal-row,
 .member-card,
-.note-card {
+.note-card,
+.inventory-section {
   border: 1px solid rgba(84, 88, 63, 0.12);
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.72);
@@ -370,6 +372,68 @@ button.secondary {
   padding-left: 20px;
   display: grid;
   gap: 8px;
+}
+
+.inventory-section {
+  overflow: hidden;
+}
+
+.inventory-section-summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 18px;
+}
+
+.inventory-section-summary::-webkit-details-marker {
+  display: none;
+}
+
+.inventory-table-wrap {
+  overflow-x: auto;
+  border-top: 1px solid rgba(84, 88, 63, 0.1);
+}
+
+.inventory-table {
+  width: 100%;
+  min-width: 1120px;
+  border-collapse: collapse;
+}
+
+.inventory-table th,
+.inventory-table td {
+  padding: 12px;
+  border-bottom: 1px solid rgba(84, 88, 63, 0.08);
+  text-align: left;
+  vertical-align: top;
+}
+
+.inventory-table th {
+  background: rgba(232, 242, 231, 0.45);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.inventory-table td input {
+  min-width: 100px;
+  padding: 10px 12px;
+  border-radius: 10px;
+}
+
+.table-sort {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+  border-radius: 0;
+  font-size: inherit;
+  font-weight: 700;
+}
+
+.table-sort:hover {
+  transform: none;
+  opacity: 0.8;
 }
 
 .meal-description {

@@ -37,6 +37,8 @@ const starterInventory: InventoryItem[] = [
   {
     id: 'i-1',
     name: 'Chickpeas',
+    brand: '',
+    categories: ['Legumes', 'Tinned goods'],
     quantity: 2,
     unit: 'tins',
     zone: 'Cupboard',
@@ -49,6 +51,8 @@ const starterInventory: InventoryItem[] = [
   {
     id: 'i-2',
     name: 'Frozen mixed vegetables',
+    brand: '',
+    categories: ['Vegetables', 'Frozen'],
     quantity: 1,
     unit: 'bag',
     zone: 'Freezer',
@@ -61,6 +65,8 @@ const starterInventory: InventoryItem[] = [
   {
     id: 'i-3',
     name: 'Greek yogurt',
+    brand: '',
+    categories: ['Dairy', 'Yogurt'],
     quantity: 500,
     unit: 'g',
     zone: 'Fridge',

@@ -50,6 +50,11 @@ function buildScannedItem(barcode: string, product: Record<string, unknown>): In
   const categoryText = Array.isArray(product.categories_tags)
     ? product.categories_tags.join(' ')
     : ''
+  const categories = Array.isArray(product.categories_tags)
+    ? product.categories_tags
+        .map((tag) => String(tag).split(':').pop() ?? String(tag))
+        .slice(0, 6)
+    : []
   const allergens = Array.isArray(product.allergens_tags)
     ? product.allergens_tags.map((tag) => String(tag).split(':').pop() ?? String(tag))
     : []
@@ -75,6 +80,8 @@ function buildScannedItem(barcode: string, product: Record<string, unknown>): In
   return {
     id: `barcode-${Date.now()}`,
     name: String(product.product_name || product.product_name_en || 'Scanned product'),
+    brand: String(product.brands || ''),
+    categories,
     quantity: 1,
     unit: 'pack',
     zone: 'Cupboard',
@@ -127,6 +134,20 @@ function App() {
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [remoteReady, setRemoteReady] = useState(false)
   const [isSavingRemote, setIsSavingRemote] = useState(false)
+  const [inventorySort, setInventorySort] = useState<{
+    key:
+      | 'name'
+      | 'brand'
+      | 'quantity'
+      | 'expiresOn'
+      | 'calories'
+      | 'protein'
+      | 'sodium'
+    direction: 'asc' | 'desc'
+  }>({
+    key: 'name',
+    direction: 'asc',
+  })
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
 
@@ -140,14 +161,45 @@ function App() {
   )
   const shoppingList = useMemo(() => buildShoppingList(mealPlan), [mealPlan])
   const requiredTags = useMemo(() => getRequiredTags(appState), [appState])
-  const inventoryByZone = useMemo(
-    () =>
-      storageZones.map((zone) => ({
-        zone,
-        items: inventory.filter((item) => item.zone === zone),
-      })),
-    [inventory],
-  )
+  const inventoryByZone = useMemo(() => {
+    const sortedItems = [...inventory].sort((left, right) => {
+      const factor = inventorySort.direction === 'asc' ? 1 : -1
+
+      const getValue = (item: InventoryItem) => {
+        switch (inventorySort.key) {
+          case 'brand':
+            return item.brand ?? ''
+          case 'quantity':
+            return item.quantity
+          case 'expiresOn':
+            return item.expiresOn || '9999-12-31'
+          case 'calories':
+            return item.health.calories ?? -1
+          case 'protein':
+            return item.health.protein ?? -1
+          case 'sodium':
+            return item.health.sodium ?? -1
+          case 'name':
+          default:
+            return item.name
+        }
+      }
+
+      const leftValue = getValue(left)
+      const rightValue = getValue(right)
+
+      if (typeof leftValue === 'number' && typeof rightValue === 'number') {
+        return (leftValue - rightValue) * factor
+      }
+
+      return String(leftValue).localeCompare(String(rightValue)) * factor
+    })
+
+    return storageZones.map((zone) => ({
+      zone,
+      items: sortedItems.filter((item) => item.zone === zone),
+    }))
+  }, [inventory, inventorySort])
 
   useEffect(() => {
     saveLocalState(appState)
@@ -378,6 +430,21 @@ function App() {
     setInventory((current) => [item, ...current])
   }
 
+  function updateInventoryItem(
+    itemId: string,
+    updater: (item: InventoryItem) => InventoryItem,
+  ) {
+    setInventory((current) => current.map((item) => (item.id === itemId ? updater(item) : item)))
+  }
+
+  function toggleInventorySort(key: typeof inventorySort.key) {
+    setInventorySort((current) => ({
+      key,
+      direction:
+        current.key === key ? (current.direction === 'asc' ? 'desc' : 'asc') : 'asc',
+    }))
+  }
+
   function handleManualAdd(event: FormEvent) {
     event.preventDefault()
     if (!manualItem.name.trim()) {
@@ -387,6 +454,8 @@ function App() {
     addInventoryItem({
       id: `manual-${Date.now()}`,
       name: titleCase(manualItem.name.trim()),
+      brand: '',
+      categories: [],
       quantity: manualItem.quantity,
       unit: manualItem.unit.trim(),
       zone: manualItem.zone,
@@ -780,31 +849,199 @@ function App() {
           <div className="panel-heading">
             <div>
               <p className="eyebrow">Inventory</p>
-              <h2>Kitchen stock by storage zone</h2>
+              <h2>Kitchen stock tables</h2>
             </div>
           </div>
-          <div className="zone-grid">
+          <div className="inventory-sections">
             {inventoryByZone.map(({ zone, items }) => (
-              <article key={zone} className="zone-card">
-                <div className="zone-card-header">
-                  <h3>{zone}</h3>
-                  <span>{items.length} items</span>
+              <details key={zone} className="inventory-section">
+                <summary className="inventory-section-summary">
+                  <div className="zone-card-header">
+                    <h3>{zone}</h3>
+                    <span>{items.length} items</span>
+                  </div>
+                </summary>
+                <div className="inventory-table-wrap">
+                  <table className="inventory-table">
+                    <thead>
+                      <tr>
+                        <th>
+                          <button type="button" className="table-sort" onClick={() => toggleInventorySort('name')}>
+                            Name
+                          </button>
+                        </th>
+                        <th>
+                          <button type="button" className="table-sort" onClick={() => toggleInventorySort('brand')}>
+                            Brand
+                          </button>
+                        </th>
+                        <th>Categories</th>
+                        <th>
+                          <button type="button" className="table-sort" onClick={() => toggleInventorySort('quantity')}>
+                            Quantity
+                          </button>
+                        </th>
+                        <th>Unit</th>
+                        <th>
+                          <button type="button" className="table-sort" onClick={() => toggleInventorySort('expiresOn')}>
+                            Use By
+                          </button>
+                        </th>
+                        <th>Barcode</th>
+                        <th>
+                          <button type="button" className="table-sort" onClick={() => toggleInventorySort('calories')}>
+                            kcal
+                          </button>
+                        </th>
+                        <th>
+                          <button type="button" className="table-sort" onClick={() => toggleInventorySort('protein')}>
+                            Protein
+                          </button>
+                        </th>
+                        <th>
+                          <button type="button" className="table-sort" onClick={() => toggleInventorySort('sodium')}>
+                            Sodium
+                          </button>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((item) => (
+                        <tr key={item.id}>
+                          <td>
+                            <input
+                              value={item.name}
+                              onChange={(event) =>
+                                updateInventoryItem(item.id, (current) => ({
+                                  ...current,
+                                  name: event.target.value,
+                                }))
+                              }
+                            />
+                          </td>
+                          <td>
+                            <input
+                              value={item.brand ?? ''}
+                              onChange={(event) =>
+                                updateInventoryItem(item.id, (current) => ({
+                                  ...current,
+                                  brand: event.target.value,
+                                }))
+                              }
+                            />
+                          </td>
+                          <td>
+                            <input
+                              value={item.categories.join(', ')}
+                              onChange={(event) =>
+                                updateInventoryItem(item.id, (current) => ({
+                                  ...current,
+                                  categories: event.target.value
+                                    .split(',')
+                                    .map((value) => value.trim())
+                                    .filter(Boolean),
+                                }))
+                              }
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="number"
+                              min="0"
+                              value={item.quantity}
+                              onChange={(event) =>
+                                updateInventoryItem(item.id, (current) => ({
+                                  ...current,
+                                  quantity: Number(event.target.value),
+                                }))
+                              }
+                            />
+                          </td>
+                          <td>
+                            <input
+                              value={item.unit}
+                              onChange={(event) =>
+                                updateInventoryItem(item.id, (current) => ({
+                                  ...current,
+                                  unit: event.target.value,
+                                }))
+                              }
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="date"
+                              value={item.expiresOn}
+                              onChange={(event) =>
+                                updateInventoryItem(item.id, (current) => ({
+                                  ...current,
+                                  expiresOn: event.target.value,
+                                }))
+                              }
+                            />
+                          </td>
+                          <td>
+                            <input
+                              value={item.barcode ?? ''}
+                              onChange={(event) =>
+                                updateInventoryItem(item.id, (current) => ({
+                                  ...current,
+                                  barcode: event.target.value,
+                                }))
+                              }
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="number"
+                              value={item.health.calories ?? ''}
+                              onChange={(event) =>
+                                updateInventoryItem(item.id, (current) => ({
+                                  ...current,
+                                  health: {
+                                    ...current.health,
+                                    calories: event.target.value ? Number(event.target.value) : undefined,
+                                  },
+                                }))
+                              }
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="number"
+                              value={item.health.protein ?? ''}
+                              onChange={(event) =>
+                                updateInventoryItem(item.id, (current) => ({
+                                  ...current,
+                                  health: {
+                                    ...current.health,
+                                    protein: event.target.value ? Number(event.target.value) : undefined,
+                                  },
+                                }))
+                              }
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="number"
+                              value={item.health.sodium ?? ''}
+                              onChange={(event) =>
+                                updateInventoryItem(item.id, (current) => ({
+                                  ...current,
+                                  health: {
+                                    ...current.health,
+                                    sodium: event.target.value ? Number(event.target.value) : undefined,
+                                  },
+                                }))
+                              }
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <ul className="item-list">
-                  {items.map((item) => (
-                    <li key={item.id}>
-                      <div>
-                        <strong>{item.name}</strong>
-                        <p>
-                          {item.quantity} {item.unit}
-                          {item.expiresOn ? ` · use by ${item.expiresOn}` : ''}
-                        </p>
-                      </div>
-                      <small>{item.source === 'barcode' ? 'Scanned' : 'Manual'}</small>
-                    </li>
-                  ))}
-                </ul>
-              </article>
+              </details>
             ))}
           </div>
         </section>

@@ -15,6 +15,8 @@ export type DietProfile = 'Omnivore' | 'Vegetarian' | 'Vegan'
 export type InventoryItem = {
   id: string
   name: string
+  brand?: string
+  categories: string[]
   quantity: number
   unit: string
   zone: StorageZone
