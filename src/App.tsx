@@ -60,8 +60,8 @@ const dietProfiles: DietProfile[] = ['Omnivore', 'Vegetarian', 'Vegan']
 const emptyRecipeForm = {
   title: '',
   description: '',
-  servings: 4,
-  cookTime: 30,
+  servings: '4',
+  cookTime: '30',
   ingredients: [{ name: '', amount: '', unit: '' }],
   steps: '',
   dietaryTags: [] as DietaryTag[],
@@ -74,8 +74,8 @@ function recipeToForm(recipe: Recipe) {
   return {
     title: recipe.title,
     description: recipe.description,
-    servings: recipe.servings,
-    cookTime: recipe.cookTime,
+    servings: String(recipe.servings),
+    cookTime: String(recipe.cookTime),
     ingredients: recipe.ingredients.map((ingredient) => ({
       name: ingredient.name,
       amount: String(ingredient.amount),
@@ -95,6 +95,19 @@ function normalize(value: string) {
 
 function includesNormalized(haystack: string, needle: string) {
   return normalize(haystack).includes(normalize(needle))
+}
+
+function parseOptionalNumberInput(value: string) {
+  if (!value.trim()) {
+    return undefined
+  }
+
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function parseNumberInput(value: string, fallback: number) {
+  return parseOptionalNumberInput(value) ?? fallback
 }
 
 function inferStorageZone(name: string, categories: string[]): AppState['inventory'][number]['zone'] {
@@ -300,6 +313,7 @@ function App() {
   const [recipeForm, setRecipeForm] = useState(emptyRecipeForm)
   const [openMealDay, setOpenMealDay] = useState<string | null>(null)
   const [mealRegenerations, setMealRegenerations] = useState<Record<string, number>>({})
+  const [inventoryQuantityInputs, setInventoryQuantityInputs] = useState<Record<string, string>>({})
   const [inventorySort, setInventorySort] = useState<{
     key:
       | 'name'
@@ -1022,6 +1036,10 @@ function App() {
     setInventory((current) => current.map((item) => (item.id === itemId ? updater(item) : item)))
   }
 
+  function getInventoryQuantityInput(item: InventoryItem) {
+    return inventoryQuantityInputs[item.id] ?? String(item.quantity)
+  }
+
   function toggleInventorySort(key: typeof inventorySort.key) {
     setInventorySort((current) => ({
       key,
@@ -1044,7 +1062,7 @@ function App() {
 
     addInventoryItem({
       ...productDraft,
-      quantity: Number(draftQuantityInput) || productDraft.quantity || 1,
+      quantity: parseNumberInput(draftQuantityInput, productDraft.quantity || 1),
     })
     setProductDraft(null)
     setDraftQuantityInput('1')
@@ -1096,7 +1114,7 @@ function App() {
     const ingredients = recipeForm.ingredients
       .map((item) => ({
         name: item.name.trim(),
-        amount: Number(item.amount) || 1,
+        amount: parseNumberInput(item.amount, 1),
         unit: item.unit.trim(),
       }))
       .filter((item) => item.name)
@@ -1124,12 +1142,12 @@ function App() {
       id: editingRecipeId ?? `user-recipe-${Date.now()}`,
       title: titleCase(recipeForm.title.trim()),
       description: recipeForm.description.trim(),
-      servings: Math.max(1, recipeForm.servings),
+      servings: Math.max(1, parseNumberInput(recipeForm.servings, 4)),
       ingredients,
       steps,
       dietaryTags: recipeForm.dietaryTags,
       allergens,
-      cookTime: Math.max(0, recipeForm.cookTime),
+      cookTime: Math.max(0, parseNumberInput(recipeForm.cookTime, 0)),
       zoneFocus: recipeForm.zoneFocus,
       nutrition: { calories: 0, protein: 0, fiber: 0, carbs: 0, fat: 0, sodium: 0 },
       healthHighlights: healthHighlights.length ? healthHighlights : ['Custom recipe'],
@@ -1189,6 +1207,11 @@ function App() {
 
   function removeInventoryItem(itemId: string) {
     setInventory((current) => current.filter((item) => item.id !== itemId))
+    setInventoryQuantityInputs((current) => {
+      const next = { ...current }
+      delete next[itemId]
+      return next
+    })
     setOpenInventoryDetails((current) => {
       const next = { ...current }
       delete next[itemId]
@@ -1804,7 +1827,7 @@ function App() {
                           name: titleCase(manualItem.name.trim()),
                           brand: '',
                           categories: [],
-                          quantity: Number(manualQuantityInput) || manualItem.quantity || 1,
+                          quantity: parseNumberInput(manualQuantityInput, manualItem.quantity || 1),
                           remainingPercent: undefined,
                           unit: manualItem.unit.trim(),
                           zone,
@@ -2013,12 +2036,28 @@ function App() {
                                     type="number"
                                     min="0"
                                     step="0.1"
-                                    value={item.quantity}
-                                    onChange={(event) =>
-                                      updateInventoryItem(item.id, (current) => ({
+                                    value={getInventoryQuantityInput(item)}
+                                    onChange={(event) => {
+                                      const nextValue = event.target.value
+                                      setInventoryQuantityInputs((current) => ({
                                         ...current,
-                                        quantity: Number(event.target.value),
+                                        [item.id]: nextValue,
                                       }))
+
+                                      const parsed = parseOptionalNumberInput(nextValue)
+                                      if (parsed !== undefined) {
+                                        updateInventoryItem(item.id, (current) => ({
+                                          ...current,
+                                          quantity: parsed,
+                                        }))
+                                      }
+                                    }}
+                                    onBlur={() =>
+                                      setInventoryQuantityInputs((current) => {
+                                        const next = { ...current }
+                                        delete next[item.id]
+                                        return next
+                                      })
                                     }
                                   />
                                   <span>
@@ -2990,7 +3029,7 @@ function App() {
                     onChange={(event) =>
                       setRecipeForm((current) => ({
                         ...current,
-                        servings: Number(event.target.value) || 1,
+                        servings: event.target.value,
                       }))
                     }
                   />
@@ -3004,7 +3043,7 @@ function App() {
                     onChange={(event) =>
                       setRecipeForm((current) => ({
                         ...current,
-                        cookTime: Number(event.target.value) || 0,
+                        cookTime: event.target.value,
                       }))
                     }
                   />
