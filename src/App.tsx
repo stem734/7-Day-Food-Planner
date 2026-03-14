@@ -123,6 +123,38 @@ function inferStorageZone(name: string, categories: string[]): AppState['invento
 
   if (
     [
+      'stock',
+      'stock cube',
+      'stock cubes',
+      'bouillon',
+      'broth',
+      'squash',
+      'cereal',
+      'oats',
+      'pasta',
+      'rice',
+      'flour',
+      'sugar',
+      'coffee',
+      'tea',
+      'tinned',
+      'canned',
+      'tin ',
+      'beans',
+      'lentils',
+      'chickpeas',
+      'tomato soup',
+      'pasta sauce',
+      'noodles',
+      'crackers',
+      'biscuits',
+    ].some((term) => source.includes(term))
+  ) {
+    return 'Cupboard'
+  }
+
+  if (
+    [
       'milk',
       'yogurt',
       'yoghurt',
@@ -132,14 +164,16 @@ function inferStorageZone(name: string, categories: string[]): AppState['invento
       'eggs',
       'fresh',
       'chilled',
-      'juice',
       'salad',
-      'fruit',
-      'vegetable',
-      'vegetables',
       'meat',
       'fish',
       'ham',
+      'berries',
+      'broccoli',
+      'spinach',
+      'lettuce',
+      'cucumber',
+      'tomato',
     ].some((term) => source.includes(term))
   ) {
     return 'Fridge'
@@ -333,6 +367,7 @@ function App() {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const scannerIntervalRef = useRef<number | null>(null)
+  const scannerBusyRef = useRef(false)
 
   const appState = useMemo(
     () => ({
@@ -862,8 +897,24 @@ function App() {
   async function startScanner(zone: 'main' | InventoryItem['zone'] = 'main') {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
       })
+
+      const [videoTrack] = stream.getVideoTracks()
+      if (videoTrack) {
+        const capabilities = videoTrack.getCapabilities?.() as
+          | { focusMode?: string[] }
+          | undefined
+        if (capabilities?.focusMode?.includes('continuous')) {
+          void videoTrack.applyConstraints({
+            advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet],
+          })
+        }
+      }
 
       mediaStreamRef.current = stream
       setScannerZone(zone)
@@ -887,11 +938,16 @@ function App() {
       }
 
       scannerIntervalRef.current = window.setInterval(async () => {
-        if (!videoRef.current) {
+        if (!videoRef.current || scannerBusyRef.current) {
+          return
+        }
+
+        if (videoRef.current.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
           return
         }
 
         try {
+          scannerBusyRef.current = true
           const results = await detector.detect(videoRef.current)
           const code = results[0]?.rawValue
 
@@ -924,8 +980,10 @@ function App() {
           }
         } catch {
           setScannerMessage('Scanning is active, but detection is still waiting for a clearer barcode.')
+        } finally {
+          scannerBusyRef.current = false
         }
-      }, 900)
+      }, 350)
     } catch {
       setScannerMessage('Camera access was blocked. Manual barcode entry is still available.')
       setScannerZone(zone)
@@ -938,6 +996,7 @@ function App() {
       window.clearInterval(scannerIntervalRef.current)
       scannerIntervalRef.current = null
     }
+    scannerBusyRef.current = false
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
     mediaStreamRef.current = null
     if (videoRef.current) {
@@ -1416,6 +1475,18 @@ function App() {
     }))
   }
 
+  function removeShoppingItem(itemName: string) {
+    setShoppingExtras((current) =>
+      current.filter((item) => normalize(item.name) !== normalize(itemName)),
+    )
+    setShoppingChecked((current) => {
+      const next = { ...current }
+      delete next[itemName]
+      return next
+    })
+    setShoppingFeedback(`${titleCase(itemName)} removed from your shopping list.`)
+  }
+
   function getCookingForValue(day: string): MealCookingFor {
     return mealCookingFor[day] ?? 'all'
   }
@@ -1546,6 +1617,32 @@ function App() {
 
     if (
       [
+        'stock',
+        'stock cube',
+        'stock cubes',
+        'bouillon',
+        'broth',
+        'squash',
+        'cereal',
+        'oats',
+        'pasta',
+        'rice',
+        'flour',
+        'coffee',
+        'tea',
+        'tinned',
+        'canned',
+        'beans',
+        'lentils',
+        'chickpeas',
+        'sauce',
+      ].some((term) => source.includes(term))
+    ) {
+      return 'Cupboard'
+    }
+
+    if (
+      [
         'milk',
         'yogurt',
         'yoghurt',
@@ -1558,9 +1655,6 @@ function App() {
         'cucumber',
         'salad',
         'lettuce',
-        'fruit',
-        'vegetable',
-        'vegetables',
         'chicken',
         'fish',
         'meat',
@@ -3254,11 +3348,22 @@ function App() {
                                 <span>Needed for: {item.neededFor.join(', ')}</span>
                               </div>
                             </label>
-                            <span
-                              className={`badge shopping-priority shopping-priority-${item.priority.toLowerCase()}`}
-                            >
-                              {item.priority} priority
-                            </span>
+                            <div className="shopping-item-actions">
+                              <span
+                                className={`badge shopping-priority shopping-priority-${item.priority.toLowerCase()}`}
+                              >
+                                {item.priority} priority
+                              </span>
+                              <button
+                                type="button"
+                                className="danger-icon-button"
+                                aria-label={`Delete ${item.name} from shopping list`}
+                                title={`Delete ${item.name} from shopping list`}
+                                onClick={() => removeShoppingItem(item.name)}
+                              >
+                                ×
+                              </button>
+                            </div>
                           </li>
                         )
                       })}
