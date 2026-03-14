@@ -720,21 +720,24 @@ button.secondary:hover,
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 16px;
 }
 
 .zone-card-header > div:first-child {
-  min-width: 140px;
+  flex: 0 0 160px;
+  min-width: 160px;
 }
 
 .zone-card-actions {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: nowrap;
 }
 
 .zone-card-actions span {
+  min-width: 62px;
   white-space: nowrap;
 }
 
@@ -757,8 +760,10 @@ button.secondary:hover,
 }
 
 .summary-clear-button {
+  min-width: 150px;
   padding: 8px 10px;
   font-size: 0.82rem;
+  text-align: center;
   white-space: nowrap;
 }
 
@@ -772,7 +777,7 @@ button.secondary:hover,
 
 .inventory-table {
   width: 100%;
-  min-width: 720px;
+  min-width: 620px;
   border-collapse: collapse;
 }
 
@@ -813,6 +818,7 @@ button.secondary:hover,
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .quantity-field input {
@@ -1179,11 +1185,13 @@ button.secondary:hover,
 
   .zone-card-header {
     align-items: flex-start;
+    flex-wrap: wrap;
   }
 
   .zone-card-actions {
     flex-direction: column;
     align-items: flex-start;
+    flex-wrap: wrap;
   }
 
   .member-card-header {

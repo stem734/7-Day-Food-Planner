@@ -56,6 +56,7 @@ declare global {
 }
 
 const dietProfiles: DietProfile[] = ['Omnivore', 'Vegetarian', 'Vegan']
+const APP_VERSION = '0.1.1'
 
 const emptyRecipeForm = {
   title: '',
@@ -108,6 +109,22 @@ function parseOptionalNumberInput(value: string) {
 
 function parseNumberInput(value: string, fallback: number) {
   return parseOptionalNumberInput(value) ?? fallback
+}
+
+function getRebuyPreset(value?: number) {
+  if (!value) {
+    return 'none'
+  }
+  if (value === 7) {
+    return 'weekly'
+  }
+  if (value === 14) {
+    return 'fortnightly'
+  }
+  if (value === 30) {
+    return 'monthly'
+  }
+  return 'custom'
 }
 
 function inferStorageZone(name: string, categories: string[]): AppState['inventory'][number]['zone'] {
@@ -279,6 +296,33 @@ function toCachedProduct(item: InventoryItem): CachedProduct {
     allergens: item.allergens,
     health: item.health,
   }
+}
+
+async function fetchOpenFoodFactsProduct(value: string) {
+  const fields = [
+    'product_name',
+    'product_name_en',
+    'brands',
+    'categories_tags',
+    'allergens_tags',
+    'nutriments',
+    'nova_group',
+  ].join(',')
+
+  const response = await fetch(
+    `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(value)}.json?fields=${encodeURIComponent(fields)}`,
+  )
+
+  const data = (await response.json()) as {
+    status?: number
+    product?: Record<string, unknown>
+  }
+
+  if (!response.ok || data.status !== 1 || !data.product) {
+    throw new Error('Product not found')
+  }
+
+  return data.product
 }
 
 function App() {
@@ -828,33 +872,21 @@ function App() {
   }, [shoppingFeedback])
 
   async function lookupBarcodeValue(value: string) {
-    if (isSupabaseEnabled) {
-      try {
-        const cached = await loadCachedProduct(value)
-        if (cached) {
-          return {
-            draft: buildDraftFromCachedProduct(cached),
-            source: 'cache' as const,
-          }
-        }
-      } catch {
-        // Fall back to Open Food Facts if shared cache lookup fails.
+    const cachePromise = isSupabaseEnabled
+      ? loadCachedProduct(value).catch(() => null)
+      : Promise.resolve(null)
+    const remotePromise = fetchOpenFoodFactsProduct(value)
+
+    const cached = await cachePromise
+    if (cached) {
+      return {
+        draft: buildDraftFromCachedProduct(cached),
+        source: 'cache' as const,
       }
     }
 
-    const response = await fetch(
-      `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(value)}.json`,
-    )
-    const data = (await response.json()) as {
-      status?: number
-      product?: Record<string, unknown>
-    }
-
-    if (!response.ok || data.status !== 1 || !data.product) {
-      throw new Error('Product not found')
-    }
-
-    const draft = buildScannedItem(value, data.product)
+    const product = await remotePromise
+    const draft = buildScannedItem(value, product)
 
     if (isSupabaseEnabled) {
       void saveCachedProduct(toCachedProduct(draft)).catch(() => {
@@ -2098,11 +2130,6 @@ function App() {
                             Amount
                           </button>
                         </th>
-                        <th>
-                          <button type="button" className="table-sort" onClick={() => toggleInventorySort('expiresOn')}>
-                            Use By / Best Before
-                          </button>
-                        </th>
                         <th>More</th>
                       </tr>
                     </thead>
@@ -2155,24 +2182,12 @@ function App() {
                                     }
                                   />
                                   <span>
-                                    {item.unit}
+                                    {item.unit || 'item'}
                                     {item.remainingPercent !== undefined
                                       ? ` · ${item.remainingPercent}% left`
                                       : ''}
                                   </span>
                                 </div>
-                              </td>
-                              <td data-label="Use By / Best Before">
-                                <input
-                                  type="date"
-                                  value={item.expiresOn}
-                                  onChange={(event) =>
-                                    updateInventoryItem(item.id, (current) => ({
-                                      ...current,
-                                      expiresOn: event.target.value,
-                                    }))
-                                  }
-                                />
                               </td>
                               <td data-label="Actions">
                                 <div className="row-actions">
@@ -2197,7 +2212,7 @@ function App() {
                             </tr>
                             {isOpen ? (
                               <tr className="inventory-detail-row">
-                                <td colSpan={4}>
+                                <td colSpan={3}>
                                   <div className="inventory-detail-panel">
                                     <div className="inventory-detail-grid">
                                       <label>
@@ -2226,6 +2241,19 @@ function App() {
                                         />
                                       </label>
                                       <label>
+                                        Use By / Best Before
+                                        <input
+                                          type="date"
+                                          value={item.expiresOn}
+                                          onChange={(event) =>
+                                            updateInventoryItem(item.id, (current) => ({
+                                              ...current,
+                                              expiresOn: event.target.value,
+                                            }))
+                                          }
+                                        />
+                                      </label>
+                                      <label>
                                         % left
                                         <input
                                           type="number"
@@ -2243,21 +2271,51 @@ function App() {
                                         />
                                       </label>
                                       <label>
-                                        Rebuy every days
-                                        <input
-                                          type="number"
-                                          min="1"
-                                          value={item.rebuyEveryDays ?? ''}
-                                          onChange={(event) =>
+                                        Buy frequency
+                                        <select
+                                          value={getRebuyPreset(item.rebuyEveryDays)}
+                                          onChange={(event) => {
+                                            const preset = event.target.value
                                             updateInventoryItem(item.id, (current) => ({
                                               ...current,
-                                              rebuyEveryDays: event.target.value
-                                                ? Number(event.target.value)
-                                                : undefined,
+                                              rebuyEveryDays:
+                                                preset === 'none'
+                                                  ? undefined
+                                                  : preset === 'weekly'
+                                                    ? 7
+                                                    : preset === 'fortnightly'
+                                                      ? 14
+                                                      : preset === 'monthly'
+                                                        ? 30
+                                                        : current.rebuyEveryDays ?? 21,
                                             }))
-                                          }
-                                        />
+                                          }}
+                                        >
+                                          <option value="none">Only when needed</option>
+                                          <option value="weekly">Weekly</option>
+                                          <option value="fortnightly">Fortnightly</option>
+                                          <option value="monthly">Monthly</option>
+                                          <option value="custom">Custom days</option>
+                                        </select>
                                       </label>
+                                      {getRebuyPreset(item.rebuyEveryDays) === 'custom' ? (
+                                        <label>
+                                          Custom rebuy days
+                                          <input
+                                            type="number"
+                                            min="1"
+                                            value={item.rebuyEveryDays ?? ''}
+                                            onChange={(event) =>
+                                              updateInventoryItem(item.id, (current) => ({
+                                                ...current,
+                                                rebuyEveryDays: event.target.value
+                                                  ? Number(event.target.value)
+                                                  : undefined,
+                                              }))
+                                            }
+                                          />
+                                        </label>
+                                      ) : null}
                                       <label>
                                         Categories
                                         <input
@@ -3407,7 +3465,7 @@ function App() {
       ) : null}
 
       <footer className="app-footer">
-        <p>Version 0.1.0</p>
+        <p>Version {APP_VERSION}</p>
         <p>(C) Stephen Murdock 2026</p>
       </footer>
     </div>
