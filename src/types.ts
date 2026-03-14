@@ -138,6 +138,13 @@ export type CachedProduct = {
   health: InventoryItem['health']
 }
 
+export type CachedProductEntry = {
+  product: CachedProduct
+  accessCount: number
+  updatedAt?: string
+  lastAccessed?: string
+}
+
 export type SupabasePantryStateRow = {
   id?: string
   user_id: string
@@ -161,5 +168,7 @@ export type SupabasePantryStateRow = {
 export type SupabaseProductCacheRow = {
   barcode: string
   product: CachedProduct
+  access_count?: number
+  last_accessed?: string
   updated_at?: string
 }

@@ -10,6 +10,7 @@ import {
 } from './data'
 import { buildMealPlan, formatRecipeIngredient, titleCase } from './lib/planner'
 import { loadInitialState, saveLocalState } from './lib/storage'
+import { getStarterCachedProduct } from './starterCache'
 import {
   getCurrentUserId,
   isSupabaseEnabled,
@@ -56,7 +57,7 @@ declare global {
 }
 
 const dietProfiles: DietProfile[] = ['Omnivore', 'Vegetarian', 'Vegan']
-const APP_VERSION = '0.1.1'
+const APP_VERSION = '0.1.3'
 
 const emptyRecipeForm = {
   title: '',
@@ -199,6 +200,35 @@ function inferStorageZone(name: string, categories: string[]): AppState['invento
   return 'Cupboard'
 }
 
+function cleanProductName(value: string) {
+  return value
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+\d{6,}\b/g, '')
+    .replace(/\b\d{8,}\b/g, '')
+    .replace(/\s+[A-Z0-9]{10,}\b/g, '')
+    .trim()
+}
+
+function getBestProductName(product: Record<string, unknown>) {
+  const candidates = [
+    product.abbreviated_product_name,
+    product.product_name,
+    product.product_name_en,
+    product.generic_name,
+    product.generic_name_en,
+  ]
+    .map((value) => (typeof value === 'string' ? cleanProductName(value) : ''))
+    .filter(Boolean)
+
+  const goodCandidate = candidates.find((value) => {
+    const words = value.split(/\s+/).filter(Boolean)
+    return words.length >= 2 || value.length >= 6
+  })
+
+  return goodCandidate || candidates[0] || 'Scanned product'
+}
+
 function buildScannedItem(barcode: string, product: Record<string, unknown>): InventoryItem {
   const categoryText = Array.isArray(product.categories_tags)
     ? product.categories_tags.join(' ')
@@ -235,19 +265,17 @@ function buildScannedItem(barcode: string, product: Record<string, unknown>): In
       : typeof product.nova_group === 'string'
         ? Number(product.nova_group) || undefined
         : undefined
+  const productName = getBestProductName(product)
 
   return {
     id: `barcode-${Date.now()}`,
-    name: String(product.product_name || product.product_name_en || 'Scanned product'),
+    name: productName,
     brand: String(product.brands || ''),
     categories,
     quantity: 1,
     remainingPercent: undefined,
     unit: 'pack',
-    zone: inferStorageZone(
-      String(product.product_name || product.product_name_en || 'Scanned product'),
-      categories,
-    ),
+    zone: inferStorageZone(productName, categories),
     expiresOn: '',
     barcode,
     source: 'barcode',
@@ -300,8 +328,11 @@ function toCachedProduct(item: InventoryItem): CachedProduct {
 
 async function fetchOpenFoodFactsProduct(value: string) {
   const fields = [
+    'abbreviated_product_name',
     'product_name',
     'product_name_en',
+    'generic_name',
+    'generic_name_en',
     'brands',
     'categories_tags',
     'allergens_tags',
@@ -323,6 +354,20 @@ async function fetchOpenFoodFactsProduct(value: string) {
   }
 
   return data.product
+}
+
+function shouldRefreshCachedProduct(updatedAt?: string, accessCount = 0) {
+  if (!updatedAt || accessCount < 3) {
+    return false
+  }
+
+  const updatedTime = new Date(updatedAt).getTime()
+  if (!Number.isFinite(updatedTime)) {
+    return false
+  }
+
+  const ageMs = Date.now() - updatedTime
+  return ageMs > 7 * 24 * 60 * 60 * 1000
 }
 
 function App() {
@@ -877,11 +922,29 @@ function App() {
       : Promise.resolve(null)
     const remotePromise = fetchOpenFoodFactsProduct(value)
 
-    const cached = await cachePromise
-    if (cached) {
+    const cachedEntry = await cachePromise
+    if (cachedEntry) {
+      if (isSupabaseEnabled && shouldRefreshCachedProduct(cachedEntry.updatedAt, cachedEntry.accessCount)) {
+        void remotePromise
+          .then((product) =>
+            saveCachedProduct(toCachedProduct(buildScannedItem(value, product)), cachedEntry.accessCount + 1),
+          )
+          .catch(() => {
+            // Ignore background refresh failures; cached data is still usable.
+          })
+      }
+
       return {
-        draft: buildDraftFromCachedProduct(cached),
+        draft: buildDraftFromCachedProduct(cachedEntry.product),
         source: 'cache' as const,
+      }
+    }
+
+    const starterCached = getStarterCachedProduct(value)
+    if (starterCached) {
+      return {
+        draft: buildDraftFromCachedProduct(starterCached),
+        source: 'starter-cache' as const,
       }
     }
 
@@ -889,7 +952,7 @@ function App() {
     const draft = buildScannedItem(value, product)
 
     if (isSupabaseEnabled) {
-      void saveCachedProduct(toCachedProduct(draft)).catch(() => {
+      void saveCachedProduct(toCachedProduct(draft), 1).catch(() => {
         // Ignore cache-write failures during lookup; the scanned item still works.
       })
     }
@@ -918,6 +981,8 @@ function App() {
       setLookupMessage(
         source === 'cache'
           ? `Found ${draft.name} from shared cache. Suggested storage: ${draft.zone}. Confirm quantity, then add it.`
+          : source === 'starter-cache'
+            ? `Found ${draft.name} from built-in starter cache. Suggested storage: ${draft.zone}. Confirm quantity, then add it.`
           : `Found ${draft.name}. Suggested storage: ${draft.zone}. Confirm quantity, then add it.`,
       )
     } catch {
@@ -1003,6 +1068,8 @@ function App() {
               setLookupMessage(
                 source === 'cache'
                   ? 'Barcode detected and product details loaded from shared cache.'
+                  : source === 'starter-cache'
+                    ? 'Barcode detected and product details loaded from the built-in starter cache.'
                   : 'Barcode detected and product details loaded.',
               )
             } catch {
@@ -1844,6 +1911,17 @@ function App() {
               ) : null}
               <div className="inline-fields">
                 <label>
+                  Item name
+                  <input
+                    value={productDraft.name}
+                    onChange={(event) =>
+                      setProductDraft((current) =>
+                        current ? { ...current, name: event.target.value } : current,
+                      )
+                    }
+                  />
+                </label>
+                <label>
                   Amount in stock
                   <input
                     type="number"
@@ -2064,6 +2142,17 @@ function App() {
                           </p>
                         ) : null}
                         <div className="inline-fields">
+                          <label>
+                            Item name
+                            <input
+                              value={productDraft.name}
+                              onChange={(event) =>
+                                setProductDraft((current) =>
+                                  current ? { ...current, name: event.target.value, zone } : current,
+                                )
+                              }
+                            />
+                          </label>
                           <label>
                             How many in stock?
                             <input

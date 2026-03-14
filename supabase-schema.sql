@@ -35,6 +35,8 @@ using (auth.uid() = user_id);
 create table if not exists public.product_cache (
   barcode text primary key,
   product jsonb not null,
+  access_count integer not null default 0,
+  last_accessed timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
 

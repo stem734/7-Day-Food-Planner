@@ -1,5 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
-import type { AppState, CachedProduct, SupabasePantryStateRow, SupabaseProductCacheRow } from '../types'
+import type {
+  AppState,
+  CachedProduct,
+  CachedProductEntry,
+  SupabasePantryStateRow,
+  SupabaseProductCacheRow,
+} from '../types'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -133,7 +139,7 @@ export async function loadCachedProduct(barcode: string) {
 
   const { data, error } = await supabase
     .from('product_cache')
-    .select('barcode, product, updated_at')
+    .select('barcode, product, access_count, last_accessed, updated_at')
     .eq('barcode', barcode)
     .maybeSingle<SupabaseProductCacheRow>()
 
@@ -141,22 +147,59 @@ export async function loadCachedProduct(barcode: string) {
     throw error
   }
 
-  return data?.product ?? null
+  if (!data?.product) {
+    return null
+  }
+
+  const entry: CachedProductEntry = {
+    product: data.product,
+    accessCount: data.access_count ?? 0,
+    lastAccessed: data.last_accessed,
+    updatedAt: data.updated_at,
+  }
+
+  void touchCachedProduct(barcode, entry.accessCount).catch(() => {
+    // Ignore access tracking failures; returning the cached product still helps.
+  })
+
+  return entry
 }
 
-export async function saveCachedProduct(product: CachedProduct) {
+export async function saveCachedProduct(product: CachedProduct, accessCount = 1) {
   if (!supabase) {
     return
   }
 
+  const now = new Date().toISOString()
   const payload: SupabaseProductCacheRow = {
     barcode: product.barcode,
     product,
+    access_count: accessCount,
+    last_accessed: now,
+    updated_at: now,
   }
 
   const { error } = await supabase.from('product_cache').upsert(payload, {
     onConflict: 'barcode',
   })
+
+  if (error) {
+    throw error
+  }
+}
+
+export async function touchCachedProduct(barcode: string, currentAccessCount = 0) {
+  if (!supabase) {
+    return
+  }
+
+  const { error } = await supabase
+    .from('product_cache')
+    .update({
+      access_count: currentAccessCount + 1,
+      last_accessed: new Date().toISOString(),
+    })
+    .eq('barcode', barcode)
 
   if (error) {
     throw error
